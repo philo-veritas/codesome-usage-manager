@@ -1,0 +1,13 @@
+config.yaml
+.codesome_auth.json
+.usage_cache.json
+
+*.db
+*.db-shm
+*.db-wal
+
+usage-cli
+codesome
+
+.DS_Store
+coverage.out

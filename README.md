@@ -1,0 +1,149 @@
+# Go Usage CLI
+
+Go implementation of Codex Usage Helper. It supports Codex Buddy usage lookup and Codesome usage, key management, quota reset, group switching, and HTTP API mode.
+
+## Build
+
+```bash
+go mod tidy
+go build -o usage-cli .
+```
+
+## Usage
+
+Run from the `go/` directory:
+
+```bash
+go run . --provider codesome
+go run . --provider codesome --force-update
+go run . --provider codesome --debug
+```
+
+The CLI loads `config.yaml` from the current directory or the parent project directory.
+
+## Codesome Commands
+
+For the planned SQLite-backed Codesome API Key management flow, see
+[`docs/codesome-api-key-management-design.md`](../docs/codesome-api-key-management-design.md).
+
+Query one API key's daily usage:
+
+```bash
+go run . daily-usage --key main
+go run . daily-usage --key-id 6732
+```
+
+Query one API key's aggregate usage stats for an inclusive date range:
+
+```bash
+go run . usage-stats --key main --start-date 2026-05-26 --end-date 2026-05-26
+go run . usage-stats --key-id 6732 --start-date 2026-05-26 --end-date 2026-05-27
+```
+
+Create or update a Codesome API key:
+
+```bash
+go run . create-key --name test --group-id 51
+go run . update-key --key-id 9356 --status inactive
+go run . update-key --key main --name main-2
+go run . update-key --key-id 9356 --group-id 51
+```
+
+Reset one API key's quota:
+
+```bash
+go run . reset-quota --key main
+go run . reset-quota --key-id 6732
+```
+
+Switch one API key to a target group:
+
+```bash
+go run . switch-group --key main --group-id 60
+go run . switch-group --key-id 6732 --group-id 60
+```
+
+Switch automatically when the current subscription daily remaining quota is below a threshold. The target is the active subscription group with the most remaining daily quota. The default threshold is `0`, which preserves the old exhausted-only behavior:
+
+```bash
+go run . switch-on-exhausted --key main
+go run . switch-on-exhausted --key-id 6732
+go run . switch-on-exhausted --key main --min-remaining 10
+go run . switch-on-exhausted --all --min-remaining 10
+```
+
+Run a long-lived auto switcher for all configured Codesome API keys. It aligns all keys to the active group with the most remaining daily quota on startup and at the start of each Beijing day, then checks dynamically based on remaining quota:
+
+```bash
+go run . auto-switch --all --min-remaining 10 --min-interval 2m --max-interval 2h
+```
+
+Run the API on a server with Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
+Run the API and opt in to the state-changing auto switcher:
+
+```bash
+docker compose --profile auto-switch up -d --build
+docker compose logs -f usage-auto-switch
+```
+
+## HTTP API
+
+Start the server:
+
+```bash
+go run . serve --port 8080
+```
+
+By default, the server binds to `127.0.0.1`. Use `--host` only when you intentionally want to expose it elsewhere.
+
+Endpoints:
+
+```bash
+GET  /api/cost
+GET  /api/codesome/usage
+GET  /api/codesome/usage?force_update=true
+GET  /api/codesome/usage-stats?key=main&start_date=2026-05-26&end_date=2026-05-26
+GET  /api/codesome/usage-stats?key_id=6732&start_date=2026-05-26&end_date=2026-05-27&force_update=true
+POST /api/codesome/keys              {"name":"test","group_id":51}
+PUT  /api/codesome/keys?key=main     {"status":"inactive"}
+PUT  /api/codesome/keys?key_id=9356  {"name":"main-2","group_id":51}
+GET  /api/codesome/daily-usage?key=main
+GET  /api/codesome/daily-usage?key_id=6732
+POST /api/codesome/reset-quota?key=main
+POST /api/codesome/reset-quota?key_id=6732
+POST /api/codesome/reset-all-quotas
+POST /api/codesome/switch-group?key=main&group_id=60
+POST /api/codesome/switch-group?key_id=6732&group_id=60
+POST /api/codesome/switch-on-exhausted?key=main
+POST /api/codesome/switch-on-exhausted?key_id=6732
+```
+
+## Config
+
+Codesome keys can be given aliases in `config.yaml`:
+
+```yaml
+providers:
+  - name: "Codesome"
+    base_url: "https://v3.codesome.cn"
+    login_credentials:
+      email: "your-email@example.com"
+      password: "your-password"
+    api_key_ids:
+      - id: 6732
+        name: "architecture-extra"
+        key: "main"
+```
+
+The Go and Python implementations share `.codesome_auth.json` and `.usage_cache.json`.
+
+## Test
+
+```bash
+go test ./...
+```
