@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"usage-cli/internal/config"
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/provider"
 )
 
 var (
@@ -20,8 +20,8 @@ var dailyUsageCmd = &cobra.Command{
 	Long: `查询指定 Codesome API Key 的今日用量（TodayCost）
 
 示例:
-  usage-cli daily-usage --key main
-  usage-cli daily-usage --key-id 2085`,
+  codesome daily-usage --key main
+  codesome daily-usage --key-id 2085`,
 	RunE: runDailyUsage,
 }
 

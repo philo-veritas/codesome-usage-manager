@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/provider"
 )
 
 var (
@@ -24,7 +24,7 @@ var createKeyCmd = &cobra.Command{
 	Long: `创建 Codesome API Key，并输出新 key。返回的 sk-... 只会展示一次，不写入本地缓存。
 
 示例:
-  usage-cli create-key --name test --group-id 51`,
+  codesome create-key --name test --group-id 51`,
 	RunE: runCreateKey,
 }
 
@@ -34,9 +34,9 @@ var updateKeyCmd = &cobra.Command{
 	Long: `更新 Codesome API Key 的名称、状态或 group。
 
 示例:
-  usage-cli update-key --key-id 9356 --status inactive
-  usage-cli update-key --key main --name main-2
-  usage-cli update-key --key-id 9356 --group-id 51`,
+  codesome update-key --key-id 9356 --status inactive
+  codesome update-key --key main --name main-2
+  codesome update-key --key-id 9356 --group-id 51`,
 	RunE: runUpdateKey,
 }
 

@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"usage-cli/internal/config"
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/provider"
 )
 
 var (
@@ -17,7 +17,7 @@ var (
 var resetQuotaCmd = &cobra.Command{
 	Use:   "reset-quota",
 	Short: "重置 Codesome API Key 的配额",
-	Long:  "调用 Codesome API 重置指定 API Key 的配额，并清除本地缓存\n\n示例:\n  usage-cli reset-quota --key main\n  usage-cli reset-quota --key-id 2085",
+	Long:  "调用 Codesome API 重置指定 API Key 的配额，并清除本地缓存\n\n示例:\n  codesome reset-quota --key main\n  codesome reset-quota --key-id 2085",
 	RunE:  runResetQuota,
 }
 

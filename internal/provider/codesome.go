@@ -11,12 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"usage-cli/internal/auth"
-	"usage-cli/internal/cache"
-	"usage-cli/internal/config"
+	"codesome-usage-manager/internal/auth"
+	"codesome-usage-manager/internal/cache"
+	"codesome-usage-manager/internal/config"
 )
-
-const codesomeBaseURL = "https://v3.codesome.cn"
 
 var codesomeHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
@@ -115,14 +113,24 @@ type codesomeUsageResponse struct {
 
 type codesomeClient struct {
 	authClient *auth.CodesomeAuth
+	baseURL    string
 }
 
 func newCodesomeClient(cfg *config.Config) *codesomeClient {
-	return &codesomeClient{authClient: auth.NewCodesomeAuth(cfg)}
+	baseURL := config.DefaultCodesomeBaseURL
+	if cfg != nil {
+		if codesome := cfg.GetCodesomeConfig(); codesome != nil {
+			baseURL = codesome.BaseURL
+		}
+	}
+	return &codesomeClient{
+		authClient: auth.NewCodesomeAuth(cfg),
+		baseURL:    baseURL,
+	}
 }
 
 func (c *codesomeClient) request(method, path string, body any) ([]byte, error) {
-	url := codesomeBaseURL + path
+	url := c.baseURL + path
 	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)

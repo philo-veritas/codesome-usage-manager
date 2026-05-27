@@ -1,33 +1,30 @@
 services:
   usage-api:
     build: .
-    container_name: claude-usage-api
+    container_name: codesome-usage-api
     command: ["serve"]
     volumes:
-      - ../config.yaml:/app/config.yaml:ro
-      - ../.usage_cache.json:/app/.usage_cache.json
-      - ../.codesome_auth.json:/app/.codesome_auth.json
-    environment:
-      - ANTHROPIC_BASE_URL
-      - ANTHROPIC_AUTH_TOKEN
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.usage_cache.json:/app/.usage_cache.json
+      - ./.codesome_auth.json:/app/.codesome_auth.json
     restart: unless-stopped
 
   usage-auto-switch:
     build: .
-    container_name: claude-usage-auto-switch
+    container_name: codesome-usage-auto-switch
     profiles: ["auto-switch"]
     command: ["auto-switch", "--all", "--min-remaining", "10", "--min-interval", "2m", "--max-interval", "2h"]
     volumes:
-      - ../config.yaml:/app/config.yaml:ro
-      - ../.usage_cache.json:/app/.usage_cache.json
-      - ../.codesome_auth.json:/app/.codesome_auth.json
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.usage_cache.json:/app/.usage_cache.json
+      - ./.codesome_auth.json:/app/.codesome_auth.json
     restart: unless-stopped
     depends_on:
       - usage-api
 
   nginx:
     image: nginx:alpine
-    container_name: claude-usage-nginx
+    container_name: codesome-usage-nginx
     ports:
       - "80:80"
     volumes:
@@ -38,7 +35,7 @@ services:
 
   cron:
     image: alpine:latest
-    container_name: claude-usage-cron
+    container_name: codesome-usage-cron
     depends_on:
       - usage-api
     entrypoint: /bin/sh -c

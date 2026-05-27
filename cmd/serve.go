@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"usage-cli/internal/config"
-	"usage-cli/internal/server"
+	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/server"
 )
 
 var (
@@ -18,8 +18,8 @@ var (
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "启动 HTTP API 服务",
-	Long:  "启动 HTTP API 服务，提供 /api/cost 端点查询剩余额度",
+	Short: "启动 Codesome HTTP API 服务",
+	Long:  "启动 Codesome HTTP API 服务，提供用量查询、Key 管理、quota reset 和 group 切换端点",
 	RunE:  runServer,
 }
 
@@ -36,8 +36,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("加载配置失败: %w", err)
 	}
 
-	// Register routes
-	http.HandleFunc("/api/cost", server.CostHandler(cfg))
+	// Register Codesome routes
 	http.HandleFunc("/api/codesome/usage", server.UsageHandler(cfg))
 	http.HandleFunc("/api/codesome/usage-stats", server.UsageStatsHandler(cfg))
 	http.HandleFunc("/api/codesome/keys", server.KeysHandler(cfg))

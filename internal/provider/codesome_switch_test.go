@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"usage-cli/internal/config"
+	"codesome-usage-manager/internal/config"
 )
 
 func testSubscription(groupID int, name string, limit float64, used float64, status string) CodesomeSubscription {
@@ -412,11 +412,7 @@ func TestGetCodesomeKeyUsageStatsValidatesInput(t *testing.T) {
 }
 
 func TestFetchCodesomeUsageRequiresCodesomeConfig(t *testing.T) {
-	cfg := &config.Config{
-		Providers: []config.ProviderConfig{
-			{Name: "Codex Buddy"},
-		},
-	}
+	cfg := &config.Config{}
 	if _, _, _, _, err := FetchCodesomeUsage(cfg, false); err == nil {
 		t.Fatal("expected missing Codesome config to fail")
 	}

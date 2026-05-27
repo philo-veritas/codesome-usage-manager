@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/provider"
 )
 
 func TestNextAutoSwitchIntervalReturnsMinWhenBelowThreshold(t *testing.T) {

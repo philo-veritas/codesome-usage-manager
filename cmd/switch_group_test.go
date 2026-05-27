@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/provider"
 )
 
 func TestPrintSubscriptionUsageSummary(t *testing.T) {

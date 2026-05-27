@@ -1,22 +1,22 @@
-# Go Usage CLI
+# Codesome Usage Manager
 
-Go implementation of Codex Usage Helper. It supports Codex Buddy usage lookup and Codesome usage, key management, quota reset, group switching, and HTTP API mode.
+Go CLI and HTTP API for Codesome usage lookup, API Key management, quota reset, group switching, and auto switching.
 
 ## Build
 
 ```bash
 go mod tidy
-go build -o usage-cli .
+go build -o codesome .
 ```
 
 ## Usage
 
-Run from the `go/` directory:
+Run from the repository root:
 
 ```bash
-go run . --provider codesome
-go run . --provider codesome --force-update
-go run . --provider codesome --debug
+go run .
+go run . --force-update
+go run . --debug
 ```
 
 The CLI loads `config.yaml` from the current directory or the parent project directory.
@@ -24,7 +24,7 @@ The CLI loads `config.yaml` from the current directory or the parent project dir
 ## Codesome Commands
 
 For the planned SQLite-backed Codesome API Key management flow, see
-[`docs/codesome-api-key-management-design.md`](../docs/codesome-api-key-management-design.md).
+[`docs/codesome-api-key-management-design.md`](docs/codesome-api-key-management-design.md).
 
 Query one API key's daily usage:
 
@@ -104,7 +104,6 @@ By default, the server binds to `127.0.0.1`. Use `--host` only when you intentio
 Endpoints:
 
 ```bash
-GET  /api/cost
 GET  /api/codesome/usage
 GET  /api/codesome/usage?force_update=true
 GET  /api/codesome/usage-stats?key=main&start_date=2026-05-26&end_date=2026-05-26
@@ -128,19 +127,19 @@ POST /api/codesome/switch-on-exhausted?key_id=6732
 Codesome keys can be given aliases in `config.yaml`:
 
 ```yaml
-providers:
-  - name: "Codesome"
-    base_url: "https://v3.codesome.cn"
-    login_credentials:
-      email: "your-email@example.com"
-      password: "your-password"
-    api_key_ids:
-      - id: 6732
-        name: "architecture-extra"
-        key: "main"
+codesome:
+  base_url: "https://v3.codesome.cn"
+  login:
+    email: "your-email@example.com"
+    password: "your-password"
+  default_group_id: 51
+  api_key_ids:
+    - id: 6732
+      name: "architecture-extra"
+      key: "main"
 ```
 
-The Go and Python implementations share `.codesome_auth.json` and `.usage_cache.json`.
+Runtime state is stored in `.codesome_auth.json` and `.usage_cache.json`. Do not commit those files.
 
 ## Test
 

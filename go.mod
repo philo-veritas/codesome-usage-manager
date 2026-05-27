@@ -1,4 +1,4 @@
-module usage-cli
+module codesome-usage-manager
 
 go 1.21
 

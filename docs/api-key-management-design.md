@@ -4,7 +4,7 @@
 
 当前 Codesome key 主要通过 `config.yaml` 的 `api_key_ids` 静态维护，适合少量团队级 key 的查询、切换和重置。
 
-仓库拆分迁移计划见 [codesome-repo-migration-plan.md](codesome-repo-migration-plan.md)。
+仓库拆分迁移计划见 [migration-from-claude-code-usage-helper.md](migration-from-claude-code-usage-helper.md)。
 
 后续目标是用本项目管理 Codesome 上的 API Key：
 
@@ -30,13 +30,12 @@
 `config.yaml` 继续保存 Codesome 登录信息：
 
 ```yaml
-providers:
-  - name: "Codesome"
-    base_url: "https://v3.codesome.cn"
-    login_credentials:
-      email: "your-email@example.com"
-      password: "your-password"
-    default_group_id: 51
+codesome:
+  base_url: "https://v3.codesome.cn"
+  login:
+    email: "your-email@example.com"
+    password: "your-password"
+  default_group_id: 51
 ```
 
 `default_group_id` 是新管理流程创建 key 时使用的全局默认 Codesome group。`users.codesome_group_id` 只作为个人级覆盖值；大多数用户不需要单独配置。
@@ -220,22 +219,22 @@ CREATE TABLE sync_runs (
 ### DB 初始化
 
 ```bash
-usage-cli db init
-usage-cli db migrate
+codesome db init
+codesome db migrate
 ```
 
 ### 用户管理
 
 ```bash
-usage-cli team add --code platform --name "Platform"
-usage-cli team update --code platform --status inactive
-usage-cli team list
+codesome team add --code platform --name "Platform"
+codesome team update --code platform --status inactive
+codesome team list
 
-usage-cli user add --employee-no E12345 --name "Alice" --team platform --group-id 51
-usage-cli user update --employee-no E12345 --status inactive
-usage-cli user update --employee-no E12345 --team infra
-usage-cli user delete --employee-no E12345
-usage-cli user list
+codesome user add --employee-no E12345 --name "Alice" --team platform --group-id 51
+codesome user update --employee-no E12345 --status inactive
+codesome user update --employee-no E12345 --team infra
+codesome user delete --employee-no E12345
+codesome user list
 ```
 
 说明：
@@ -251,9 +250,9 @@ usage-cli user list
 ### 同步人员与 Key
 
 ```bash
-usage-cli sync users
-usage-cli sync users --dry-run
-usage-cli sync users --employee-no E12345
+codesome sync users
+codesome sync users --dry-run
+codesome sync users --employee-no E12345
 ```
 
 同步行为：
@@ -269,10 +268,10 @@ usage-cli sync users --employee-no E12345
 ### Key 分发与导出
 
 ```bash
-usage-cli key export --employee-no E12345
-usage-cli key export --team platform --output keys-platform.csv
-usage-cli key export --all --output keys.csv
-usage-cli key export --all --include-inactive --output keys-all.csv
+codesome key export --employee-no E12345
+codesome key export --team platform --output keys-platform.csv
+codesome key export --all --output keys.csv
+codesome key export --all --include-inactive --output keys-all.csv
 ```
 
 导出规则：
@@ -287,9 +286,9 @@ usage-cli key export --all --include-inactive --output keys-all.csv
 ### 同步历史用量
 
 ```bash
-usage-cli sync usage --date 2026-05-26
-usage-cli sync usage --from 2026-05-01 --to 2026-05-26
-usage-cli sync usage --yesterday
+codesome sync usage --date 2026-05-26
+codesome sync usage --from 2026-05-01 --to 2026-05-26
+codesome sync usage --yesterday
 ```
 
 同步行为：
@@ -303,13 +302,13 @@ usage-cli sync usage --yesterday
 ### 查询
 
 ```bash
-usage-cli usage daily --date 2026-05-26
-usage-cli usage user --employee-no E12345 --from 2026-05-01 --to 2026-05-26
-usage-cli usage team --team platform --from 2026-05-01 --to 2026-05-26
-usage-cli usage top --from 2026-05-01 --to 2026-05-26 --by actual-cost
-usage-cli report monthly --month 2026-05
-usage-cli report monthly --month 2026-05 --team platform
-usage-cli report monthly --month 2026-05 --output report-2026-05.csv
+codesome usage daily --date 2026-05-26
+codesome usage user --employee-no E12345 --from 2026-05-01 --to 2026-05-26
+codesome usage team --team platform --from 2026-05-01 --to 2026-05-26
+codesome usage top --from 2026-05-01 --to 2026-05-26 --by actual-cost
+codesome report monthly --month 2026-05
+codesome report monthly --month 2026-05 --team platform
+codesome report monthly --month 2026-05 --output report-2026-05.csv
 ```
 
 月报规则：
@@ -356,7 +355,7 @@ GET    /api/codesome/reports/monthly?month=2026-05
 提供一次性导入命令：
 
 ```bash
-usage-cli db import-config-keys
+codesome db import-config-keys
 ```
 
 迁移策略：

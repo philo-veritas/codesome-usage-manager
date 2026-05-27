@@ -1,12 +1,12 @@
 COMPOSE ?= docker compose
 BASE_COMPOSE := -f docker-compose.yml
 NGINX_COMPOSE := -f docker-compose.nginx.yml
-STATE_FILES := ../.usage_cache.json ../.codesome_auth.json
+STATE_FILES := .usage_cache.json .codesome_auth.json
 
 .PHONY: build-dev help ensure-state-files compose-build compose-up compose-up-auto compose-up-nginx compose-down compose-down-nginx compose-restart compose-restart-auto compose-restart-nginx compose-logs compose-logs-auto compose-ps compose-ps-nginx
 
 build-dev:
-	go build -o usage-cli .
+	go build -o codesome .
 
 help:
 	@echo "Common targets:"

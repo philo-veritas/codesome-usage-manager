@@ -3,20 +3,16 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+const DefaultCodesomeBaseURL = "https://v3.codesome.cn"
+
 type LoginCredentials struct {
 	Email    string `yaml:"email"`
 	Password string `yaml:"password"`
-}
-
-type ApiKeyConfig struct {
-	Name      string `yaml:"name"`
-	ApiID     string `yaml:"api_id"`
-	AuthToken string `yaml:"auth_token"`
 }
 
 type CodesomeApiKeyId struct {
@@ -25,44 +21,31 @@ type CodesomeApiKeyId struct {
 	Key  string `yaml:"key"`
 }
 
-type ProviderConfig struct {
-	Name             string            `yaml:"name"`
-	BaseURL          string            `yaml:"base_url"`
-	ApiKeyConfigs    []ApiKeyConfig    `yaml:"api_key_configs"`
-	LoginCredentials *LoginCredentials `yaml:"login_credentials"`
+type CodesomeConfig struct {
+	BaseURL          string             `yaml:"base_url"`
+	Login            *LoginCredentials  `yaml:"login"`
+	DefaultGroupID   int                `yaml:"default_group_id"`
+	ApiKeyIDs        []CodesomeApiKeyId `yaml:"api_key_ids"`
+	LoginCredentials *LoginCredentials  `yaml:"login_credentials,omitempty"`
+}
+
+type legacyProviderConfig struct {
+	Name             string             `yaml:"name"`
+	BaseURL          string             `yaml:"base_url"`
+	LoginCredentials *LoginCredentials  `yaml:"login_credentials"`
 	ApiKeyIDs        []CodesomeApiKeyId `yaml:"api_key_ids"`
 }
 
 type Config struct {
-	Providers []ProviderConfig `yaml:"providers"`
+	Codesome  *CodesomeConfig        `yaml:"codesome"`
+	Providers []legacyProviderConfig `yaml:"providers,omitempty"`
 }
 
-// LoadConfig loads config.yaml from project root directory
+// LoadConfig loads config.yaml from the current working directory.
 func LoadConfig() (*Config, error) {
-	// Get project root (parent of go/ directory)
-	execPath, err := os.Getwd()
+	data, err := os.ReadFile("config.yaml")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get working directory: %w", err)
-	}
-
-	// Try current directory first, then parent directory
-	configPaths := []string{
-		filepath.Join(execPath, "config.yaml"),
-		filepath.Join(filepath.Dir(execPath), "config.yaml"),
-	}
-
-	var data []byte
-	var configPath string
-	for _, path := range configPaths {
-		data, err = os.ReadFile(path)
-		if err == nil {
-			configPath = path
-			break
-		}
-	}
-
-	if configPath == "" {
-		return nil, fmt.Errorf("config.yaml not found in expected locations")
+		return nil, fmt.Errorf("config.yaml not found in current directory: %w", err)
 	}
 
 	var cfg Config
@@ -73,97 +56,49 @@ func LoadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
-// GetProviderByEnv returns provider config matching ANTHROPIC_BASE_URL
-func (c *Config) GetProviderByEnv() (*ProviderConfig, error) {
-	baseURL := os.Getenv("ANTHROPIC_BASE_URL")
-	if baseURL == "" {
-		return nil, fmt.Errorf("ANTHROPIC_BASE_URL environment variable not set")
+// GetCodesomeConfig returns the Codesome config, including legacy provider fallback.
+func (c *Config) GetCodesomeConfig() *CodesomeConfig {
+	if c == nil {
+		return nil
 	}
-
-	for i := range c.Providers {
-		if c.Providers[i].BaseURL == baseURL {
-			return &c.Providers[i], nil
-		}
+	if c.Codesome != nil {
+		c.Codesome.normalize()
+		return c.Codesome
 	}
-
-	return nil, fmt.Errorf("no provider found matching ANTHROPIC_BASE_URL: %s", baseURL)
-}
-
-// GetApiIDByEnv returns API ID for the current environment
-func (c *Config) GetApiIDByEnv() (string, error) {
-	provider, err := c.GetProviderByEnv()
-	if err != nil {
-		return "", err
-	}
-
-	authToken := os.Getenv("ANTHROPIC_AUTH_TOKEN")
-	if authToken == "" {
-		return "", fmt.Errorf("ANTHROPIC_AUTH_TOKEN environment variable not set")
-	}
-
-	for _, apiKeyConfig := range provider.ApiKeyConfigs {
-		if apiKeyConfig.AuthToken == authToken {
-			return apiKeyConfig.ApiID, nil
-		}
-	}
-
-	return "", fmt.Errorf("no API config found matching ANTHROPIC_AUTH_TOKEN")
-}
-
-// IsClaudeBuddyProvider checks if current provider is Claude Buddy
-func (c *Config) IsClaudeBuddyProvider() (bool, error) {
-	provider, err := c.GetProviderByEnv()
-	if err != nil {
-		return false, err
-	}
-	return provider.Name == "Claude Buddy", nil
-}
-
-// GetApiIDByAuthToken returns API ID for the given auth token (Claude Buddy only)
-func (c *Config) GetApiIDByAuthToken(authToken string) (string, error) {
 	for _, provider := range c.Providers {
-		if provider.Name == "Claude Buddy" {
-			for _, apiKeyConfig := range provider.ApiKeyConfigs {
-				if apiKeyConfig.AuthToken == authToken {
-					return apiKeyConfig.ApiID, nil
-				}
+		if provider.Name == "Codesome" {
+			c.Codesome = &CodesomeConfig{
+				BaseURL:   provider.BaseURL,
+				Login:     provider.LoginCredentials,
+				ApiKeyIDs: provider.ApiKeyIDs,
 			}
-		}
-	}
-	return "", fmt.Errorf("未找到匹配的 API 配置")
-}
-
-// GetAllClaudeBuddyAccounts returns all Claude Buddy accounts from config
-func (c *Config) GetAllClaudeBuddyAccounts() []ApiKeyConfig {
-	var accounts []ApiKeyConfig
-	for _, provider := range c.Providers {
-		if provider.Name == "Claude Buddy" {
-			accounts = append(accounts, provider.ApiKeyConfigs...)
-		}
-	}
-	return accounts
-}
-
-// GetCodesomeConfig returns the Codesome provider config, or nil if not found
-func (c *Config) GetCodesomeConfig() *ProviderConfig {
-	for i := range c.Providers {
-		if c.Providers[i].Name == "Codesome" {
-			return &c.Providers[i]
+			c.Codesome.normalize()
+			return c.Codesome
 		}
 	}
 	return nil
 }
 
+func (c *CodesomeConfig) normalize() {
+	if c.BaseURL == "" {
+		c.BaseURL = DefaultCodesomeBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.Login == nil && c.LoginCredentials != nil {
+		c.Login = c.LoginCredentials
+	}
+}
+
 // GetCodesomeLoginCredentials returns login credentials for Codesome
 func (c *Config) GetCodesomeLoginCredentials() (*LoginCredentials, error) {
-	provider := c.GetCodesomeConfig()
-	if provider == nil {
-		return nil, fmt.Errorf("Codesome provider not found in config.yaml")
+	codesome := c.GetCodesomeConfig()
+	if codesome == nil {
+		return nil, fmt.Errorf("codesome config not found in config.yaml")
 	}
-	if provider.LoginCredentials == nil {
-		return nil, fmt.Errorf("Codesome login_credentials is missing in config.yaml")
+	if codesome.Login == nil {
+		return nil, fmt.Errorf("codesome.login is missing in config.yaml")
 	}
-	return provider.LoginCredentials, nil
+	return codesome.Login, nil
 }
 
 // ResolveCodesomeKeyID resolves a key alias to its numeric ID from api_key_ids config.

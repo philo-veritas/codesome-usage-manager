@@ -16,22 +16,8 @@ type CacheEntry struct {
 
 type CacheFile map[string]CacheEntry
 
-// GetCacheFilePath returns the path to .usage_cache.json in project root
+// GetCacheFilePath returns the path to .usage_cache.json in the current working directory.
 func GetCacheFilePath() string {
-	// Try to find cache file in current directory or parent directory
-	paths := []string{
-		".usage_cache.json",
-		"../.usage_cache.json",
-	}
-
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			return absPath
-		}
-	}
-
-	// Default to current directory
 	absPath, _ := filepath.Abs(".usage_cache.json")
 	return absPath
 }

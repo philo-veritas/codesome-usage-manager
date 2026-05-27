@@ -9,7 +9,7 @@ RUN go mod download
 
 # 复制源代码并构建
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o usage-cli .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o codesome .
 
 # 运行阶段
 FROM alpine:latest
@@ -17,9 +17,9 @@ FROM alpine:latest
 WORKDIR /app
 
 # 复制构建产物
-COPY --from=builder /build/usage-cli .
+COPY --from=builder /build/codesome .
 
 EXPOSE 8080
 
-ENTRYPOINT ["./usage-cli"]
+ENTRYPOINT ["./codesome"]
 CMD ["serve"]

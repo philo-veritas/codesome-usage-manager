@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/provider"
 )
 
 var (
@@ -23,8 +23,8 @@ var usageStatsCmd = &cobra.Command{
 start-date 和 end-date 为左右包含，格式为 YYYY-MM-DD，timezone 固定为 Asia/Shanghai。
 
 示例:
-  usage-cli usage-stats --key main --start-date 2026-05-26 --end-date 2026-05-26
-  usage-cli usage-stats --key-id 6732 --start-date 2026-05-26 --end-date 2026-05-27`,
+  codesome usage-stats --key main --start-date 2026-05-26 --end-date 2026-05-26
+  codesome usage-stats --key-id 6732 --start-date 2026-05-26 --end-date 2026-05-27`,
 	RunE: runUsageStats,
 }
 

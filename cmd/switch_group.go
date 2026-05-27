@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"usage-cli/internal/config"
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/provider"
 )
 
 var (
@@ -25,8 +25,8 @@ var switchGroupCmd = &cobra.Command{
 	Long: `切换指定 Codesome API Key 绑定的 group，从而切换该 Key 使用的 subscription 额度。
 
 示例:
-  usage-cli switch-group --key main --group-id 60
-  usage-cli switch-group --key-id 6732 --group-id 60`,
+  codesome switch-group --key main --group-id 60
+  codesome switch-group --key-id 6732 --group-id 60`,
 	RunE: runSwitchGroup,
 }
 
@@ -38,9 +38,9 @@ var switchOnExhaustedCmd = &cobra.Command{
 默认阈值为 0，保持“用尽后切换”的行为。
 
 示例:
-  usage-cli switch-on-exhausted --key main
-  usage-cli switch-on-exhausted --key-id 6732
-  usage-cli switch-on-exhausted --all --min-remaining 10`,
+  codesome switch-on-exhausted --key main
+  codesome switch-on-exhausted --key-id 6732
+  codesome switch-on-exhausted --all --min-remaining 10`,
 	RunE: runSwitchOnExhausted,
 }
 

@@ -8,29 +8,22 @@ import (
 	"strings"
 	"testing"
 
-	"usage-cli/internal/config"
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/provider"
 )
 
 func testConfig() *config.Config {
 	return &config.Config{
-		Providers: []config.ProviderConfig{
-			{
-				Name: "Codesome",
-				ApiKeyIDs: []config.CodesomeApiKeyId{
-					{ID: 6732, Key: "main", Name: "main key"},
-				},
+		Codesome: &config.CodesomeConfig{
+			ApiKeyIDs: []config.CodesomeApiKeyId{
+				{ID: 6732, Key: "main", Name: "main key"},
 			},
 		},
 	}
 }
 
 func testConfigWithoutCodesome() *config.Config {
-	return &config.Config{
-		Providers: []config.ProviderConfig{
-			{Name: "Codex Buddy"},
-		},
-	}
+	return &config.Config{}
 }
 
 func TestUsageHandlerReturnsProviderResult(t *testing.T) {

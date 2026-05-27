@@ -10,11 +10,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"usage-cli/internal/config"
+	"codesome-usage-manager/internal/config"
 )
 
 const (
-	codesomeBaseURL = "https://v3.codesome.cn"
 	expiryBufferSec = 300
 	authFileName    = ".codesome_auth.json"
 )
@@ -30,30 +29,27 @@ type authState struct {
 // CodesomeAuth handles login, token refresh, and persistence.
 type CodesomeAuth struct {
 	authFile string
+	baseURL  string
 	cfg      *config.Config
 }
 
 // NewCodesomeAuth creates a new auth client.
 func NewCodesomeAuth(cfg *config.Config) *CodesomeAuth {
+	baseURL := config.DefaultCodesomeBaseURL
+	if cfg != nil {
+		if codesome := cfg.GetCodesomeConfig(); codesome != nil {
+			baseURL = codesome.BaseURL
+		}
+	}
 	return &CodesomeAuth{
 		authFile: getAuthFilePath(),
+		baseURL:  baseURL,
 		cfg:      cfg,
 	}
 }
 
 func getAuthFilePath() string {
-	paths := []string{
-		authFileName,
-		filepath.Join("..", authFileName),
-	}
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			abs, _ := filepath.Abs(p)
-			return abs
-		}
-	}
-	// Default: parent directory (project root when running from go/)
-	abs, _ := filepath.Abs(filepath.Join("..", authFileName))
+	abs, _ := filepath.Abs(authFileName)
 	return abs
 }
 
@@ -129,7 +125,7 @@ func (a *CodesomeAuth) login() (*authState, error) {
 	})
 
 	resp, err := authHTTPClient.Post(
-		codesomeBaseURL+"/api/v1/auth/login",
+		a.baseURL+"/api/v1/auth/login",
 		"application/json",
 		bytes.NewBuffer(reqBody),
 	)
@@ -160,7 +156,7 @@ func (a *CodesomeAuth) refresh(refreshToken string) (*authState, error) {
 	})
 
 	resp, err := authHTTPClient.Post(
-		codesomeBaseURL+"/api/v1/auth/refresh",
+		a.baseURL+"/api/v1/auth/refresh",
 		"application/json",
 		bytes.NewBuffer(reqBody),
 	)

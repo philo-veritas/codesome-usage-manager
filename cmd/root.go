@@ -6,47 +6,25 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"usage-cli/internal/config"
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/provider"
 )
 
 var (
-	forceUpdate  bool
-	debug        bool
-	providerFlag string
+	forceUpdate bool
+	debug       bool
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "usage",
-	Short: "显示 Claude API 使用量",
-	Long:  "Claude Code Usage Helper - 显示 API 使用量",
+	Use:   "codesome",
+	Short: "Codesome 用量和 API Key 管理工具",
+	Long:  "codesome-usage-manager - Codesome 用量查询、API Key 管理、quota reset 和 group 切换工具",
 	RunE:  runUsage,
 }
 
 func init() {
 	rootCmd.Flags().BoolVarP(&forceUpdate, "force-update", "f", false, "强制刷新远程数据")
 	rootCmd.Flags().BoolVarP(&debug, "debug", "d", false, "Debug 模式，打印原始 JSON 数据")
-	rootCmd.Flags().StringVar(&providerFlag, "provider", "",
-		"指定 provider: claude-buddy, codesome（默认自动检测）")
-}
-
-func resolveProvider(cfg *config.Config) (string, error) {
-	if providerFlag != "" {
-		return providerFlag, nil
-	}
-
-	// Auto-detect: try env-based first
-	isClaudeBuddy, err := cfg.IsClaudeBuddyProvider()
-	if err == nil && isClaudeBuddy {
-		return "claude-buddy", nil
-	}
-
-	// Check if Codesome is configured
-	if cfg.GetCodesomeConfig() != nil {
-		return "codesome", nil
-	}
-
-	return "", fmt.Errorf("未检测到有效的 provider，请使用 --provider 指定")
 }
 
 func runUsage(cmd *cobra.Command, args []string) error {
@@ -54,33 +32,7 @@ func runUsage(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("加载配置失败: %w", err)
 	}
-
-	selected, err := resolveProvider(cfg)
-	if err != nil {
-		return err
-	}
-
-	switch selected {
-	case "claude-buddy":
-		return runClaudeBuddy(cfg)
-	case "codesome":
-		return runCodesome(cfg)
-	default:
-		return fmt.Errorf("不支持的 provider: %s", selected)
-	}
-}
-
-func runClaudeBuddy(cfg *config.Config) error {
-	apiID, err := cfg.GetApiIDByEnv()
-	if err != nil {
-		return fmt.Errorf("获取 API ID 失败: %w", err)
-	}
-	usageData, err := provider.FetchUsage(apiID, forceUpdate)
-	if err != nil {
-		return fmt.Errorf("获取使用量失败: %w", err)
-	}
-	provider.DisplayUsage(usageData, debug)
-	return nil
+	return runCodesome(cfg)
 }
 
 func runCodesome(cfg *config.Config) error {

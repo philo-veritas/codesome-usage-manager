@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"usage-cli/internal/config"
-	"usage-cli/internal/provider"
+	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/provider"
 )
 
 var (
