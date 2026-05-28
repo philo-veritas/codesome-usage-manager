@@ -152,6 +152,14 @@ codesome db migrate
 codesome db init --path /tmp/codesome-manager-test.db
 ```
 
+Manage local teams:
+
+```bash
+codesome team add --code platform --name "Platform"
+codesome team update --code platform --status inactive
+codesome team list
+```
+
 ## Test
 
 ```bash
