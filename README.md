@@ -179,6 +179,15 @@ codesome sync users
 codesome sync users --employee-no E12345
 ```
 
+Export local API keys:
+
+```bash
+codesome key export --employee-no E12345
+codesome key export --team platform --output keys-platform.csv
+codesome key export --all --output keys.csv
+codesome key export --all --include-inactive --output keys-all.csv
+```
+
 ## Test
 
 ```bash

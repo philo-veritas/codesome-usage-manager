@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -23,6 +24,22 @@ type APIKey struct {
 	CreatedAt      string
 	UpdatedAt      string
 	LastSyncedAt   *string
+}
+
+type APIKeyExportRow struct {
+	EmployeeNo    string
+	UserName      string
+	TeamCode      *string
+	KeyName       string
+	CodesomeKeyID int
+	RawKey        *string
+	Status        string
+}
+
+type ListAPIKeyExportRowsParams struct {
+	EmployeeNo      string
+	TeamCode        string
+	IncludeInactive bool
 }
 
 type APIKeyRepository struct {
@@ -135,6 +152,74 @@ WHERE id = ?
 		return nil, fmt.Errorf("touch api key sync: %w", err)
 	}
 	return r.GetByID(ctx, id)
+}
+
+func (r *APIKeyRepository) ListExportRows(ctx context.Context, params ListAPIKeyExportRowsParams) ([]APIKeyExportRow, error) {
+	conditions := []string{
+		"users.status != ?",
+	}
+	args := []any{UserStatusDeleted}
+	if !params.IncludeInactive {
+		conditions = append(conditions, "users.status = ?", "api_keys.status = ?")
+		args = append(args, UserStatusActive, APIKeyStatusActive)
+	}
+	if params.EmployeeNo != "" {
+		conditions = append(conditions, "users.employee_no = ?")
+		args = append(args, params.EmployeeNo)
+	}
+	if params.TeamCode != "" {
+		conditions = append(conditions, "teams.code = ?")
+		args = append(args, params.TeamCode)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+  users.employee_no,
+  users.name,
+  teams.code,
+  api_keys.name,
+  api_keys.codesome_key_id,
+  api_keys.raw_key,
+  api_keys.status
+FROM api_keys
+JOIN users ON api_keys.user_id = users.id
+LEFT JOIN teams ON users.team_id = teams.id
+WHERE `+strings.Join(conditions, " AND ")+`
+ORDER BY users.employee_no, api_keys.id
+`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list api key export rows: %w", err)
+	}
+	defer rows.Close()
+
+	var result []APIKeyExportRow
+	for rows.Next() {
+		var row APIKeyExportRow
+		var teamCode sql.NullString
+		var rawKey sql.NullString
+		if err := rows.Scan(
+			&row.EmployeeNo,
+			&row.UserName,
+			&teamCode,
+			&row.KeyName,
+			&row.CodesomeKeyID,
+			&rawKey,
+			&row.Status,
+		); err != nil {
+			return nil, fmt.Errorf("scan api key export row: %w", err)
+		}
+		if teamCode.Valid {
+			row.TeamCode = &teamCode.String
+		}
+		if rawKey.Valid {
+			row.RawKey = &rawKey.String
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate api key export rows: %w", err)
+	}
+	return result, nil
 }
 
 func IsValidAPIKeyStatus(status string) bool {

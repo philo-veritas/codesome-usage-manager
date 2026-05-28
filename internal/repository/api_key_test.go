@@ -76,3 +76,104 @@ func TestAPIKeyRepositoryRejectsInvalidInput(t *testing.T) {
 		t.Fatal("expected invalid codesome key id to fail")
 	}
 }
+
+func TestAPIKeyRepositoryListExportRowsFiltersActiveByDefault(t *testing.T) {
+	teamRepo, userRepo := newTestUserRepositories(t)
+	ctx := context.Background()
+	if _, err := teamRepo.Create(ctx, "platform", "Platform"); err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	activeUser, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E12345", Name: "Alice", TeamCode: "platform"})
+	if err != nil {
+		t.Fatalf("create active user: %v", err)
+	}
+	inactiveUser, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E99999", Name: "Bob", TeamCode: "platform"})
+	if err != nil {
+		t.Fatalf("create inactive user: %v", err)
+	}
+	inactiveStatus := UserStatusInactive
+	if _, err := userRepo.Update(ctx, "E99999", UpdateUserParams{Status: &inactiveStatus}); err != nil {
+		t.Fatalf("deactivate user: %v", err)
+	}
+
+	repo := NewAPIKeyRepository(userRepo.db)
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        activeUser.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        APIKeyStatusActive,
+		GroupID:       51,
+		RawKey:        "sk-active",
+	}); err != nil {
+		t.Fatalf("create active key: %v", err)
+	}
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        inactiveUser.ID,
+		CodesomeKeyID: 6733,
+		Name:          "Bob",
+		Status:        APIKeyStatusInactive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create inactive key: %v", err)
+	}
+
+	rows, err := repo.ListExportRows(ctx, ListAPIKeyExportRowsParams{TeamCode: "platform"})
+	if err != nil {
+		t.Fatalf("list export rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].EmployeeNo != "E12345" || rows[0].TeamCode == nil || *rows[0].TeamCode != "platform" {
+		t.Fatalf("unexpected active export rows: %+v", rows)
+	}
+	if rows[0].RawKey == nil || *rows[0].RawKey != "sk-active" {
+		t.Fatalf("unexpected raw key: %+v", rows[0].RawKey)
+	}
+
+	rows, err = repo.ListExportRows(ctx, ListAPIKeyExportRowsParams{TeamCode: "platform", IncludeInactive: true})
+	if err != nil {
+		t.Fatalf("list export rows with inactive: %v", err)
+	}
+	if len(rows) != 2 || rows[1].EmployeeNo != "E99999" || rows[1].RawKey != nil {
+		t.Fatalf("unexpected include-inactive rows: %+v", rows)
+	}
+}
+
+func TestAPIKeyRepositoryListExportRowsFiltersByEmployeeNo(t *testing.T) {
+	_, userRepo := newTestUserRepositories(t)
+	ctx := context.Background()
+	alice, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create alice: %v", err)
+	}
+	bob, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E99999", Name: "Bob"})
+	if err != nil {
+		t.Fatalf("create bob: %v", err)
+	}
+
+	repo := NewAPIKeyRepository(userRepo.db)
+	for _, item := range []struct {
+		userID int64
+		keyID  int
+		name   string
+	}{
+		{alice.ID, 6732, "Alice"},
+		{bob.ID, 6733, "Bob"},
+	} {
+		if _, err := repo.Create(ctx, CreateAPIKeyParams{
+			UserID:        item.userID,
+			CodesomeKeyID: item.keyID,
+			Name:          item.name,
+			Status:        APIKeyStatusActive,
+			GroupID:       51,
+		}); err != nil {
+			t.Fatalf("create api key: %v", err)
+		}
+	}
+
+	rows, err := repo.ListExportRows(ctx, ListAPIKeyExportRowsParams{EmployeeNo: "E99999"})
+	if err != nil {
+		t.Fatalf("list export rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].EmployeeNo != "E99999" || rows[0].CodesomeKeyID != 6733 {
+		t.Fatalf("unexpected rows: %+v", rows)
+	}
+}
