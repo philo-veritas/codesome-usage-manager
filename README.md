@@ -188,6 +188,15 @@ codesome key export --all --output keys.csv
 codesome key export --all --include-inactive --output keys-all.csv
 ```
 
+Sync local usage history:
+
+```bash
+codesome sync usage --date 2026-05-26
+codesome sync usage --from 2026-05-01 --to 2026-05-26
+codesome sync usage --yesterday
+codesome sync usage --date 2026-05-28 --include-today
+```
+
 ## Test
 
 ```bash
