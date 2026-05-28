@@ -171,6 +171,14 @@ codesome user delete --employee-no E12345
 codesome user list
 ```
 
+Sync local users to Codesome API keys:
+
+```bash
+codesome sync users --dry-run
+codesome sync users
+codesome sync users --employee-no E12345
+```
+
 ## Test
 
 ```bash
