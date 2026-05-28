@@ -160,6 +160,17 @@ codesome team update --code platform --status inactive
 codesome team list
 ```
 
+Manage local users:
+
+```bash
+codesome user add --employee-no E12345 --name "Alice" --team platform --group-id 51
+codesome user update --employee-no E12345 --status inactive
+codesome user update --employee-no E12345 --team infra
+codesome user update --employee-no E12345 --clear-group-id
+codesome user delete --employee-no E12345
+codesome user list
+```
+
 ## Test
 
 ```bash
