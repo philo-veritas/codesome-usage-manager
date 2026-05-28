@@ -72,3 +72,15 @@ providers:
 		t.Fatalf("unexpected api_key_ids: %+v", codesome.ApiKeyIDs)
 	}
 }
+
+func TestDatabasePath(t *testing.T) {
+	cfg := &Config{}
+	if got := cfg.DatabasePath(); got != DefaultDatabasePath {
+		t.Fatalf("expected default path %q, got %q", DefaultDatabasePath, got)
+	}
+
+	cfg.Database.Path = "/tmp/custom.db"
+	if got := cfg.DatabasePath(); got != "/tmp/custom.db" {
+		t.Fatalf("expected custom path, got %q", got)
+	}
+}

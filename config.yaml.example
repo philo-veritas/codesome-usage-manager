@@ -9,3 +9,6 @@ codesome:
     - id: 6732
       name: "main"
       key: "main"
+
+database:
+  path: "./codesome-manager.db"

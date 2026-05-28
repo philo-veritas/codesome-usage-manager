@@ -36,6 +36,9 @@ codesome:
     email: "your-email@example.com"
     password: "your-password"
   default_group_id: 51
+
+database:
+  path: "./codesome-manager.db"
 ```
 
 `default_group_id` 是新管理流程创建 key 时使用的全局默认 Codesome group。`users.codesome_group_id` 只作为个人级覆盖值；大多数用户不需要单独配置。

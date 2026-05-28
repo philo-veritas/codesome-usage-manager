@@ -8,7 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const DefaultCodesomeBaseURL = "https://v3.codesome.cn"
+const (
+	DefaultCodesomeBaseURL = "https://v3.codesome.cn"
+	DefaultDatabasePath    = "codesome-manager.db"
+)
 
 type LoginCredentials struct {
 	Email    string `yaml:"email"`
@@ -38,7 +41,12 @@ type legacyProviderConfig struct {
 
 type Config struct {
 	Codesome  *CodesomeConfig        `yaml:"codesome"`
+	Database  DatabaseConfig         `yaml:"database"`
 	Providers []legacyProviderConfig `yaml:"providers,omitempty"`
+}
+
+type DatabaseConfig struct {
+	Path string `yaml:"path"`
 }
 
 // LoadConfig loads config.yaml from the current working directory.
@@ -54,6 +62,13 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func (c *Config) DatabasePath() string {
+	if c != nil && c.Database.Path != "" {
+		return c.Database.Path
+	}
+	return DefaultDatabasePath
 }
 
 // GetCodesomeConfig returns the Codesome config, including legacy provider fallback.

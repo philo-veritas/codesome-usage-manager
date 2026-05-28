@@ -137,9 +137,20 @@ codesome:
     - id: 6732
       name: "architecture-extra"
       key: "main"
+
+database:
+  path: "./codesome-manager.db"
 ```
 
 Runtime state is stored in `.codesome_auth.json` and `.usage_cache.json`. Do not commit those files.
+
+Initialize or migrate the local SQLite database:
+
+```bash
+codesome db init
+codesome db migrate
+codesome db init --path /tmp/codesome-manager-test.db
+```
 
 ## Test
 
