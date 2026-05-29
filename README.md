@@ -197,6 +197,14 @@ codesome sync usage --yesterday
 codesome sync usage --date 2026-05-28 --include-today
 ```
 
+Generate monthly reports:
+
+```bash
+codesome report monthly --month 2026-05
+codesome report monthly --month 2026-05 --team platform
+codesome report monthly --month 2026-05 --output report-2026-05.csv
+```
+
 ## Test
 
 ```bash

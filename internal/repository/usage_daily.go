@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"codesome-usage-manager/internal/provider"
 )
@@ -21,6 +22,16 @@ type UsageDaily struct {
 	TotalActualCost   float64
 	AverageDurationMS float64
 	FetchedAt         string
+}
+
+type MonthlyReportRow struct {
+	Month           string
+	TeamCode        *string
+	UserName        string
+	EmployeeNo      string
+	TotalRequests   int64
+	TotalTokens     int64
+	TotalActualCost float64
 }
 
 type UsageDailyRepository struct {
@@ -110,4 +121,79 @@ WHERE api_key_id = ? AND usage_date = ?
 		return nil, fmt.Errorf("scan usage daily: %w", err)
 	}
 	return &usage, nil
+}
+
+func (r *UsageDailyRepository) MonthlyReport(ctx context.Context, month string, teamCode string) ([]MonthlyReportRow, error) {
+	if month == "" {
+		return nil, fmt.Errorf("month is required")
+	}
+	startDate := month + "-01"
+	endDate, err := nextMonthStart(month)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+SELECT
+  ? AS month,
+  teams.code,
+  users.name,
+  users.employee_no,
+  COALESCE(SUM(usage_daily.total_requests), 0),
+  COALESCE(SUM(usage_daily.total_tokens), 0),
+  COALESCE(SUM(usage_daily.total_actual_cost), 0)
+FROM usage_daily
+JOIN api_keys ON usage_daily.api_key_id = api_keys.id
+JOIN users ON api_keys.user_id = users.id
+LEFT JOIN teams ON users.team_id = teams.id
+WHERE usage_daily.usage_date >= ?
+  AND usage_daily.usage_date < ?`
+	args := []any{month, startDate, endDate}
+	if teamCode != "" {
+		query += `
+  AND teams.code = ?`
+		args = append(args, teamCode)
+	}
+	query += `
+GROUP BY teams.code, users.id, users.name, users.employee_no
+ORDER BY teams.code, users.employee_no`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query monthly report: %w", err)
+	}
+	defer rows.Close()
+
+	var result []MonthlyReportRow
+	for rows.Next() {
+		var row MonthlyReportRow
+		var teamCode sql.NullString
+		if err := rows.Scan(
+			&row.Month,
+			&teamCode,
+			&row.UserName,
+			&row.EmployeeNo,
+			&row.TotalRequests,
+			&row.TotalTokens,
+			&row.TotalActualCost,
+		); err != nil {
+			return nil, fmt.Errorf("scan monthly report row: %w", err)
+		}
+		if teamCode.Valid {
+			row.TeamCode = &teamCode.String
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate monthly report rows: %w", err)
+	}
+	return result, nil
+}
+
+func nextMonthStart(month string) (string, error) {
+	parsed, err := time.Parse("2006-01", month)
+	if err != nil {
+		return "", fmt.Errorf("month must be YYYY-MM: %s", month)
+	}
+	return parsed.AddDate(0, 1, 0).Format("2006-01-02"), nil
 }
