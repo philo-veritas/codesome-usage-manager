@@ -2,6 +2,7 @@ COMPOSE ?= docker compose
 BASE_COMPOSE := -f docker-compose.yml
 NGINX_COMPOSE := -f docker-compose.nginx.yml
 STATE_FILES := .usage_cache.json .codesome_auth.json
+DB_FILE := codesome-manager.db
 
 .PHONY: build-dev help ensure-state-files compose-build compose-up compose-up-auto compose-up-nginx compose-down compose-down-nginx compose-restart compose-restart-auto compose-restart-nginx compose-logs compose-logs-auto compose-ps compose-ps-nginx
 
@@ -30,6 +31,9 @@ ensure-state-files:
 			echo '{}' > "$$file"; \
 		fi; \
 	done
+	@if [ ! -f "$(DB_FILE)" ]; then \
+		touch "$(DB_FILE)"; \
+	fi
 
 compose-build:
 	$(COMPOSE) $(BASE_COMPOSE) build

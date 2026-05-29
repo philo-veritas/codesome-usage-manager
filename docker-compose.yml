@@ -9,6 +9,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./.usage_cache.json:/app/.usage_cache.json
       - ./.codesome_auth.json:/app/.codesome_auth.json
+      - ./codesome-manager.db:/app/codesome-manager.db
     restart: unless-stopped
 
   usage-auto-switch:
@@ -20,6 +21,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./.usage_cache.json:/app/.usage_cache.json
       - ./.codesome_auth.json:/app/.codesome_auth.json
+      - ./codesome-manager.db:/app/codesome-manager.db
     restart: unless-stopped
     depends_on:
       - usage-api
