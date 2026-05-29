@@ -251,57 +251,6 @@ func DailyUsageHandler(cfg *config.Config) http.HandlerFunc {
 	}
 }
 
-// ResetAllQuotasHandler handles POST /api/codesome/reset-all-quotas
-// Iterates over all configured legacy api_key_ids and resets each one.
-func ResetAllQuotasHandler(cfg *config.Config) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		codesome := cfg.GetCodesomeConfig()
-		if codesome == nil {
-			http.Error(w, "未找到 Codesome 配置", http.StatusBadRequest)
-			return
-		}
-		if len(codesome.ApiKeyIDs) == 0 {
-			http.Error(w, "未配置 legacy api_key_ids", http.StatusBadRequest)
-			return
-		}
-
-		type keyResult struct {
-			KeyID   int    `json:"key_id"`
-			Name    string `json:"name,omitempty"`
-			Status  string `json:"status"`
-			Message string `json:"message,omitempty"`
-		}
-
-		var results []keyResult
-		for _, k := range codesome.ApiKeyIDs {
-			err := provider.ResetCodesomeQuota(cfg, k.ID)
-			if err != nil {
-				results = append(results, keyResult{
-					KeyID:   k.ID,
-					Name:    k.Name,
-					Status:  "error",
-					Message: err.Error(),
-				})
-			} else {
-				results = append(results, keyResult{
-					KeyID:  k.ID,
-					Name:   k.Name,
-					Status: "ok",
-				})
-			}
-		}
-
-		writeJSON(w, map[string]any{
-			"results": results,
-		})
-	}
-}
-
 // ResetQuotaHandler handles POST /api/codesome/reset-quota
 func ResetQuotaHandler(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -283,6 +283,23 @@ func TestSummarizeSubscriptionsUsesActiveSubscriptions(t *testing.T) {
 	}
 }
 
+func TestActiveCodesomeKeysFiltersInactiveKeys(t *testing.T) {
+	keys := []CodesomeApiKey{
+		{ID: 6732, Name: "active", Status: "active"},
+		{ID: 9356, Name: "inactive", Status: "inactive"},
+		{ID: 2085, Name: "deleted", Status: "deleted"},
+		{ID: 1111, Name: "empty"},
+	}
+
+	got := activeCodesomeKeys(keys)
+	if len(got) != 1 {
+		t.Fatalf("expected one active key, got %+v", got)
+	}
+	if got[0].ID != 6732 {
+		t.Fatalf("expected active key 6732, got %+v", got[0])
+	}
+}
+
 func TestSanitizeCodesomeApiKeyForCacheDropsRawKey(t *testing.T) {
 	raw := []byte(`{
 		"id": 6732,

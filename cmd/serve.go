@@ -42,7 +42,6 @@ func runServer(cmd *cobra.Command, args []string) error {
 	http.HandleFunc("/api/codesome/keys", server.KeysHandler(cfg))
 	http.HandleFunc("/api/codesome/daily-usage", server.DailyUsageHandler(cfg))
 	http.HandleFunc("/api/codesome/reset-quota", server.ResetQuotaHandler(cfg))
-	http.HandleFunc("/api/codesome/reset-all-quotas", server.ResetAllQuotasHandler(cfg))
 	http.HandleFunc("/api/codesome/switch-group", server.SwitchGroupHandler(cfg))
 	http.HandleFunc("/api/codesome/switch-on-exhausted", server.SwitchOnExhaustedHandler(cfg))
 

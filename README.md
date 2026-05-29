@@ -127,6 +127,14 @@ go run . switch-group --key main --group-id 60
 go run . switch-group --key-id 6732 --group-id 60
 ```
 
+## Auto Switch
+
+Run the state-changing auto switcher for all Codesome API keys:
+
+```bash
+go run . auto-switch --min-remaining 10 --min-interval 2m --max-interval 2h
+```
+
 ## HTTP API
 
 Start the server:
@@ -151,7 +159,6 @@ GET  /api/codesome/daily-usage?key=main
 GET  /api/codesome/daily-usage?key_id=6732
 POST /api/codesome/reset-quota?key=main
 POST /api/codesome/reset-quota?key_id=6732
-POST /api/codesome/reset-all-quotas         legacy batch reset
 POST /api/codesome/switch-group?key=main&group_id=60
 POST /api/codesome/switch-group?key_id=6732&group_id=60
 POST /api/codesome/switch-on-exhausted?key=main
@@ -166,7 +173,7 @@ Run the API with Docker Compose:
 docker compose up -d --build
 ```
 
-The compose files persist auth/cache files and `codesome-manager.db` on the host. The state-changing auto switcher is legacy opt-in:
+The compose files persist auth/cache files and `codesome-manager.db` on the host. The state-changing auto switcher is opt-in and operates on all Codesome API keys:
 
 ```bash
 docker compose --profile auto-switch up -d --build

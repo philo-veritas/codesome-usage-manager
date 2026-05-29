@@ -898,6 +898,75 @@ func SwitchCodesomeKeysGroupOnExhausted(
 	return results, err
 }
 
+func SwitchAllCodesomeKeysGroupOnExhausted(
+	cfg *config.Config,
+	minRemainingUSD float64,
+) ([]CodesomeGroupSwitchBatchResult, error) {
+	results, _, err := SwitchAllCodesomeKeysGroupOnExhaustedWithSummary(cfg, minRemainingUSD)
+	return results, err
+}
+
+func SwitchAllCodesomeKeysGroupOnExhaustedWithSummary(
+	cfg *config.Config,
+	minRemainingUSD float64,
+) ([]CodesomeGroupSwitchBatchResult, CodesomeSubscriptionUsageSummary, error) {
+	if minRemainingUSD < 0 {
+		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("min_remaining 必须大于等于 0")
+	}
+
+	client := newCodesomeClient(cfg)
+	keys, err := client.fetchApiKeys(true)
+	if err != nil {
+		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("获取 API Key 失败: %w", err)
+	}
+	keys = activeCodesomeKeys(keys)
+	if len(keys) == 0 {
+		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("未找到 active Codesome API Key")
+	}
+	subs, err := client.fetchSubscriptions(true)
+	if err != nil {
+		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("获取订阅信息失败: %w", err)
+	}
+	summary := summarizeSubscriptions(subs)
+
+	results := make([]CodesomeGroupSwitchBatchResult, 0, len(keys))
+	switchedAny := false
+	for _, key := range keys {
+		item := CodesomeGroupSwitchBatchResult{
+			KeyID: key.ID,
+			Name:  key.Name,
+		}
+
+		result, target, err := planSwitchOnExhausted(
+			key.ID,
+			keyGroupID(&key),
+			keyGroupName(&key),
+			subs,
+			minRemainingUSD,
+		)
+		if err != nil {
+			item.Error = err.Error()
+			results = append(results, item)
+			continue
+		}
+		if target != nil {
+			if err := client.switchKeyGroup(key.ID, target.Group.ID); err != nil {
+				item.Error = err.Error()
+				results = append(results, item)
+				continue
+			}
+			switchedAny = true
+		}
+		item.Result = result
+		results = append(results, item)
+	}
+
+	if switchedAny {
+		clearCodesomeGroupSwitchCaches()
+	}
+	return results, summary, nil
+}
+
 func SwitchCodesomeKeysGroupOnExhaustedWithSummary(
 	cfg *config.Config,
 	keyConfigs []config.CodesomeApiKeyId,
@@ -1047,6 +1116,90 @@ func SwitchCodesomeKeysToBestGroup(
 		clearCodesomeGroupSwitchCaches()
 	}
 	return results, nil
+}
+
+func SwitchAllCodesomeKeysToBestGroup(cfg *config.Config) ([]CodesomeGroupSwitchBatchResult, error) {
+	client := newCodesomeClient(cfg)
+	keys, err := client.fetchApiKeys(true)
+	if err != nil {
+		return nil, fmt.Errorf("获取 API Key 失败: %w", err)
+	}
+	keys = activeCodesomeKeys(keys)
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("未找到 active Codesome API Key")
+	}
+	subs, err := client.fetchSubscriptions(true)
+	if err != nil {
+		return nil, fmt.Errorf("获取订阅信息失败: %w", err)
+	}
+
+	target, targetRemaining, ok := bestSubscription(subs)
+	if !ok {
+		return nil, fmt.Errorf("没有可用的 active subscription group")
+	}
+
+	results := make([]CodesomeGroupSwitchBatchResult, 0, len(keys))
+	switchedAny := false
+	for _, key := range keys {
+		item := CodesomeGroupSwitchBatchResult{
+			KeyID: key.ID,
+			Name:  key.Name,
+		}
+
+		fromGroupID := keyGroupID(&key)
+		fromGroupName := keyGroupName(&key)
+		currentRemaining := 0.0
+		if currentSub, remaining, ok := activeSubscriptionForGroup(subs, fromGroupID); ok {
+			currentRemaining = remaining
+			if fromGroupName == "" && currentSub.Group != nil {
+				fromGroupName = currentSub.Group.Name
+			}
+		}
+
+		result := &CodesomeGroupSwitchResult{
+			KeyID:               key.ID,
+			FromGroupID:         fromGroupID,
+			FromGroupName:       fromGroupName,
+			ToGroupID:           target.Group.ID,
+			ToGroupName:         target.Group.Name,
+			CurrentRemainingUSD: currentRemaining,
+			TargetRemainingUSD:  targetRemaining,
+		}
+
+		if fromGroupID == target.Group.ID {
+			result.Message = "API Key 已绑定当前剩余额度最高的 group，无需切换"
+			item.Result = result
+			results = append(results, item)
+			continue
+		}
+
+		if err := client.switchKeyGroup(key.ID, target.Group.ID); err != nil {
+			item.Error = err.Error()
+			results = append(results, item)
+			continue
+		}
+
+		switchedAny = true
+		result.Switched = true
+		result.Message = fmt.Sprintf("API Key %d 已切换到当前剩余额度最高的 group %d", key.ID, target.Group.ID)
+		item.Result = result
+		results = append(results, item)
+	}
+
+	if switchedAny {
+		clearCodesomeGroupSwitchCaches()
+	}
+	return results, nil
+}
+
+func activeCodesomeKeys(keys []CodesomeApiKey) []CodesomeApiKey {
+	active := make([]CodesomeApiKey, 0, len(keys))
+	for _, key := range keys {
+		if key.Status == "active" {
+			active = append(active, key)
+		}
+	}
+	return active
 }
 
 func formatTokenCount(tokens int64) string {

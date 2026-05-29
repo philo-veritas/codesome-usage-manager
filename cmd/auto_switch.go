@@ -39,24 +39,20 @@ var p80HourlyProfile = []float64{
 var autoSwitchCmd = &cobra.Command{
 	Use:   "auto-switch",
 	Short: "常驻自动切换 Codesome group",
-	Long: `常驻检查 Codesome active subscription 剩余额度，并自动切换配置中的 API Key。
+	Long: `常驻检查 Codesome active subscription 剩余额度，并自动切换所有 Codesome API Key。
 启动和每天开始时会优先切到剩余额度最高的 group；日内低于阈值时再切到剩余额度最高的 group。`,
 	RunE: runAutoSwitch,
 }
 
 func init() {
-	autoSwitchCmd.Flags().BoolVar(&autoSwitchAll, "all", false, "检查并切换 legacy api_key_ids 中的所有 API Key")
+	autoSwitchCmd.Flags().BoolVar(&autoSwitchAll, "all", false, "兼容旧参数；auto-switch 始终检查所有 Codesome API Key")
 	autoSwitchCmd.Flags().Float64Var(&autoSwitchMinRemaining, "min-remaining", 10, "当前 group 剩余额度低于该 USD 阈值时切换")
 	autoSwitchCmd.Flags().DurationVar(&autoSwitchMinInterval, "min-interval", defaultMinInterval, "最短检查间隔")
 	autoSwitchCmd.Flags().DurationVar(&autoSwitchMaxInterval, "max-interval", defaultMaxInterval, "最长检查间隔")
-	autoSwitchCmd.MarkFlagRequired("all")
 	rootCmd.AddCommand(autoSwitchCmd)
 }
 
 func runAutoSwitch(cmd *cobra.Command, args []string) error {
-	if !autoSwitchAll {
-		return fmt.Errorf("auto-switch 当前只支持 --all")
-	}
 	if autoSwitchMinRemaining < 0 {
 		return fmt.Errorf("min-remaining 必须大于等于 0")
 	}
@@ -71,10 +67,6 @@ func runAutoSwitch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	codesome := cfg.GetCodesomeConfig()
-	if len(codesome.ApiKeyIDs) == 0 {
-		return fmt.Errorf("未配置 legacy api_key_ids")
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -84,10 +76,10 @@ func runAutoSwitch(cmd *cobra.Command, args []string) error {
 	logf := autoSwitchPrintf(os.Stdout, cst)
 	errorf := autoSwitchPrintf(os.Stderr, cst)
 
-	logf("auto-switch 启动：keys=%d，min-remaining=$%.2f，interval=%s..%s\n",
-		len(codesome.ApiKeyIDs), autoSwitchMinRemaining, autoSwitchMinInterval, autoSwitchMaxInterval)
+	logf("auto-switch 启动：范围=all API keys，min-remaining=$%.2f，interval=%s..%s\n",
+		autoSwitchMinRemaining, autoSwitchMinInterval, autoSwitchMaxInterval)
 
-	remaining, err := alignKeysToBestGroup(cfg, codesome.ApiKeyIDs, logf)
+	remaining, err := alignKeysToBestGroup(cfg, logf)
 	if err != nil {
 		return err
 	}
@@ -129,9 +121,9 @@ func runAutoSwitch(cmd *cobra.Command, args []string) error {
 		if today != currentDate {
 			currentDate = today
 			logf("检测到新的一天 %s，重新切到剩余额度最高的 group\n", currentDate)
-			remaining, err = alignKeysToBestGroup(cfg, codesome.ApiKeyIDs, logf)
+			remaining, err = alignKeysToBestGroup(cfg, logf)
 		} else {
-			remaining, err = switchKeysOnExhausted(cfg, codesome.ApiKeyIDs, autoSwitchMinRemaining, logf)
+			remaining, err = switchKeysOnExhausted(cfg, autoSwitchMinRemaining, logf)
 		}
 		if err != nil {
 			errorf("auto-switch 检查失败：%v\n", err)
@@ -159,8 +151,8 @@ func autoSwitchPrintf(w io.Writer, loc *time.Location) func(string, ...any) {
 	}
 }
 
-func alignKeysToBestGroup(cfg *config.Config, keys []config.CodesomeApiKeyId, printf func(string, ...any)) (float64, error) {
-	results, err := provider.SwitchCodesomeKeysToBestGroup(cfg, keys)
+func alignKeysToBestGroup(cfg *config.Config, printf func(string, ...any)) (float64, error) {
+	results, err := provider.SwitchAllCodesomeKeysToBestGroup(cfg)
 	if err != nil {
 		return 0, err
 	}
@@ -170,8 +162,8 @@ func alignKeysToBestGroup(cfg *config.Config, keys []config.CodesomeApiKeyId, pr
 	return remainingFromSwitchResults(results), nil
 }
 
-func switchKeysOnExhausted(cfg *config.Config, keys []config.CodesomeApiKeyId, minRemainingUSD float64, printf func(string, ...any)) (float64, error) {
-	results, err := provider.SwitchCodesomeKeysGroupOnExhausted(cfg, keys, minRemainingUSD)
+func switchKeysOnExhausted(cfg *config.Config, minRemainingUSD float64, printf func(string, ...any)) (float64, error) {
+	results, err := provider.SwitchAllCodesomeKeysGroupOnExhausted(cfg, minRemainingUSD)
 	if err != nil {
 		return 0, err
 	}
