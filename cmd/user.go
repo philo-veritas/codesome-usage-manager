@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"codesome-usage-manager/internal/repository"
+	importsync "codesome-usage-manager/internal/sync"
 )
 
 var (
@@ -25,6 +26,9 @@ var (
 	userUpdateClearGroup bool
 
 	userDeleteEmployeeNo string
+
+	userImportFile   string
+	userImportDryRun bool
 )
 
 var userCmd = &cobra.Command{
@@ -48,6 +52,12 @@ var userDeleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "软删除本地用户",
 	RunE:  runUserDelete,
+}
+
+var userImportCmd = &cobra.Command{
+	Use:   "import",
+	Short: "从 CSV 批量导入本地用户",
+	RunE:  runUserImport,
 }
 
 var userListCmd = &cobra.Command{
@@ -81,6 +91,11 @@ func init() {
 	userDeleteCmd.Flags().StringVar(&userDeleteEmployeeNo, "employee-no", "", "员工稳定标识")
 	userDeleteCmd.MarkFlagRequired("employee-no")
 	userCmd.AddCommand(userDeleteCmd)
+
+	userImportCmd.Flags().StringVar(&userImportFile, "file", "", "CSV 文件路径")
+	userImportCmd.Flags().BoolVar(&userImportDryRun, "dry-run", false, "只输出导入计划，不写入数据库")
+	userImportCmd.MarkFlagRequired("file")
+	userCmd.AddCommand(userImportCmd)
 
 	userCmd.AddCommand(userListCmd)
 	rootCmd.AddCommand(userCmd)
@@ -157,6 +172,34 @@ func runUserDelete(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func runUserImport(cmd *cobra.Command, args []string) error {
+	file, err := os.Open(userImportFile)
+	if err != nil {
+		return fmt.Errorf("打开 CSV 失败: %w", err)
+	}
+	defer file.Close()
+
+	database, err := openLocalDatabaseForImport(context.Background(), userImportDryRun)
+	if err != nil {
+		return err
+	}
+	if database == nil {
+		return fmt.Errorf("user import --dry-run 需要已初始化数据库，请先运行 codesome db init")
+	}
+	if database != nil {
+		defer database.Close()
+	}
+
+	results, err := importsync.NewUserCSVImporter(database).ImportCSV(context.Background(), file, importsync.ImportUsersOptions{
+		DryRun: userImportDryRun,
+	})
+	if err != nil {
+		return err
+	}
+	printUserImportResults(results)
+	return nil
+}
+
 func runUserList(cmd *cobra.Command, args []string) error {
 	database, err := openLocalDatabase(context.Background())
 	if err != nil {
@@ -181,6 +224,23 @@ func runUserList(cmd *cobra.Command, args []string) error {
 		)
 	}
 	return w.Flush()
+}
+
+func printUserImportResults(results []importsync.ImportUsersResult) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ACTION\tROW\tEMPLOYEE_NO\tNAME\tTEAM\tSTATUS\tGROUP_ID")
+	for _, result := range results {
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			result.Action,
+			result.Row,
+			result.EmployeeNo,
+			result.Name,
+			result.TeamCode,
+			result.Status,
+			intValue(result.CodesomeGroupID),
+		)
+	}
+	w.Flush()
 }
 
 func stringValue(value *string) string {

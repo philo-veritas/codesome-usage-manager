@@ -23,10 +23,15 @@ type Team struct {
 
 type TeamRepository struct {
 	db *sql.DB
+	tx *sql.Tx
 }
 
 func NewTeamRepository(db *sql.DB) *TeamRepository {
 	return &TeamRepository{db: db}
+}
+
+func NewTeamRepositoryTx(tx *sql.Tx) *TeamRepository {
+	return &TeamRepository{tx: tx}
 }
 
 func (r *TeamRepository) Create(ctx context.Context, code string, name string) (*Team, error) {
@@ -38,7 +43,7 @@ func (r *TeamRepository) Create(ctx context.Context, code string, name string) (
 	}
 
 	now := nowString()
-	res, err := r.db.ExecContext(ctx, `
+	res, err := r.execContext(ctx, `
 INSERT INTO teams (code, name, status, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?)
 `, code, name, TeamStatusActive, now, now)
@@ -54,7 +59,7 @@ VALUES (?, ?, ?, ?, ?)
 }
 
 func (r *TeamRepository) GetByID(ctx context.Context, id int64) (*Team, error) {
-	return scanTeam(r.db.QueryRowContext(ctx, `
+	return scanTeam(r.queryRowContext(ctx, `
 SELECT id, code, name, status, created_at, updated_at
 FROM teams
 WHERE id = ?
@@ -62,7 +67,7 @@ WHERE id = ?
 }
 
 func (r *TeamRepository) GetByCode(ctx context.Context, code string) (*Team, error) {
-	return scanTeam(r.db.QueryRowContext(ctx, `
+	return scanTeam(r.queryRowContext(ctx, `
 SELECT id, code, name, status, created_at, updated_at
 FROM teams
 WHERE code = ?
@@ -102,7 +107,7 @@ func (r *TeamRepository) Update(ctx context.Context, code string, params UpdateT
 		status = *params.Status
 	}
 
-	if _, err := r.db.ExecContext(ctx, `
+	if _, err := r.execContext(ctx, `
 UPDATE teams
 SET name = ?, status = ?, updated_at = ?
 WHERE code = ?
@@ -114,7 +119,7 @@ WHERE code = ?
 }
 
 func (r *TeamRepository) List(ctx context.Context) ([]Team, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.queryContext(ctx, `
 SELECT id, code, name, status, created_at, updated_at
 FROM teams
 ORDER BY code
@@ -140,6 +145,27 @@ ORDER BY code
 
 func IsValidTeamStatus(status string) bool {
 	return status == TeamStatusActive || status == TeamStatusInactive
+}
+
+func (r *TeamRepository) execContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if r.tx != nil {
+		return r.tx.ExecContext(ctx, query, args...)
+	}
+	return r.db.ExecContext(ctx, query, args...)
+}
+
+func (r *TeamRepository) queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if r.tx != nil {
+		return r.tx.QueryContext(ctx, query, args...)
+	}
+	return r.db.QueryContext(ctx, query, args...)
+}
+
+func (r *TeamRepository) queryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	if r.tx != nil {
+		return r.tx.QueryRowContext(ctx, query, args...)
+	}
+	return r.db.QueryRowContext(ctx, query, args...)
 }
 
 func scanTeam(row *sql.Row) (*Team, error) {

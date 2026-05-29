@@ -30,7 +30,8 @@ Common first commands:
 
 ```bash
 ./codesome team add --code platform --name "Platform"
-./codesome user add --employee-no E12345 --name "Alice" --team platform --group-id 51
+./codesome user import --file users.csv --dry-run
+./codesome user import --file users.csv
 ./codesome sync users --dry-run
 ./codesome sync usage --yesterday
 ./codesome report monthly --month 2026-05
@@ -58,7 +59,7 @@ go build ./...
 | --- | --- |
 | Database | `db init`, `db migrate`, `db import-remote-keys`, `db import-config-keys` |
 | Teams | `team add`, `team update`, `team list` |
-| Users | `user add`, `user update`, `user delete`, `user list` |
+| Users | `user add`, `user import`, `user update`, `user delete`, `user list` |
 | API keys | `sync users`, `key export`, `create-key`, `update-key` |
 | Usage | `sync usage`, `usage-stats`, `daily-usage`, default `codesome` usage view |
 | Reports | `report monthly` |
@@ -94,11 +95,22 @@ Manage local users:
 
 ```bash
 codesome user add --employee-no E12345 --name "Alice" --team platform --group-id 51
+codesome user import --file users.csv --dry-run
+codesome user import --file users.csv
 codesome user update --employee-no E12345 --status inactive
 codesome user update --employee-no E12345 --team infra
 codesome user update --employee-no E12345 --clear-group-id
 codesome user delete --employee-no E12345
 codesome user list
+```
+
+CSV import expects `employee_no` and `name`; `team`, `group_id`, and `status` are optional. When `team` is set, it must match an existing team code. Save Excel sheets as CSV before importing:
+
+```csv
+employee_no,name,team,group_id,status
+E12345,Alice,platform,51,active
+E12346,Bob,infra,60,active
+E12347,Carol,platform,,inactive
 ```
 
 Sync local users to Codesome API keys:

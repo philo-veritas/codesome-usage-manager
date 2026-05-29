@@ -142,6 +142,32 @@ func TestUserRepositoryRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
+func TestUserRepositoryCreatesInactiveUserUnderInactiveTeam(t *testing.T) {
+	teamRepo, userRepo := newTestUserRepositories(t)
+	ctx := context.Background()
+
+	if _, err := teamRepo.Create(ctx, "platform", "Platform"); err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	inactiveTeam := TeamStatusInactive
+	if _, err := teamRepo.Update(ctx, "platform", UpdateTeamParams{Status: &inactiveTeam}); err != nil {
+		t.Fatalf("deactivate team: %v", err)
+	}
+
+	user, err := userRepo.Create(ctx, CreateUserParams{
+		EmployeeNo: "E12345",
+		Name:       "Alice",
+		TeamCode:   "platform",
+		Status:     UserStatusInactive,
+	})
+	if err != nil {
+		t.Fatalf("create inactive user under inactive team: %v", err)
+	}
+	if user.Status != UserStatusInactive || user.TeamCode == nil || *user.TeamCode != "platform" {
+		t.Fatalf("unexpected user: %+v", user)
+	}
+}
+
 func TestUserRepositoryRejectsInvalidGroupIDOnCreate(t *testing.T) {
 	_, userRepo := newTestUserRepositories(t)
 	ctx := context.Background()
