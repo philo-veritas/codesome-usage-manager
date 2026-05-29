@@ -115,6 +115,10 @@ func (r *APIKeyRepository) GetLatestByUserID(ctx context.Context, userID int64) 
 	return scanAPIKey(r.db.QueryRowContext(ctx, apiKeySelectSQL()+` WHERE user_id = ? ORDER BY id DESC LIMIT 1`, userID))
 }
 
+func (r *APIKeyRepository) GetByCodesomeKeyID(ctx context.Context, codesomeKeyID int) (*APIKey, error) {
+	return scanAPIKey(r.db.QueryRowContext(ctx, apiKeySelectSQL()+` WHERE codesome_key_id = ?`, codesomeKeyID))
+}
+
 type UpdateAPIKeyParams struct {
 	Name    string
 	Status  string

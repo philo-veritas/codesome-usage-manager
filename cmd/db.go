@@ -2,16 +2,21 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"codesome-usage-manager/internal/config"
 	codesomedb "codesome-usage-manager/internal/db"
+	importsync "codesome-usage-manager/internal/sync"
 )
 
 var dbPath string
+var dbImportConfigKeysDryRun bool
+var dbImportConfigKeysGroupID int
 
 var dbCmd = &cobra.Command{
 	Use:   "db",
@@ -30,10 +35,19 @@ var dbMigrateCmd = &cobra.Command{
 	RunE:  runDBMigrate,
 }
 
+var dbImportConfigKeysCmd = &cobra.Command{
+	Use:   "import-config-keys",
+	Short: "把 config.yaml 中的 API Key 清单导入本地数据库",
+	RunE:  runDBImportConfigKeys,
+}
+
 func init() {
 	dbCmd.PersistentFlags().StringVar(&dbPath, "path", "", "SQLite 数据库路径")
 	dbCmd.AddCommand(dbInitCmd)
 	dbCmd.AddCommand(dbMigrateCmd)
+	dbImportConfigKeysCmd.Flags().BoolVar(&dbImportConfigKeysDryRun, "dry-run", false, "只输出导入计划，不写入数据库")
+	dbImportConfigKeysCmd.Flags().IntVar(&dbImportConfigKeysGroupID, "group-id", 0, "导入 legacy key 使用的 Codesome group ID")
+	dbCmd.AddCommand(dbImportConfigKeysCmd)
 	rootCmd.AddCommand(dbCmd)
 }
 
@@ -65,6 +79,63 @@ func runDBMigrate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("数据库迁移完成：%s\n", path)
 	return nil
+}
+
+func runDBImportConfigKeys(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("加载配置失败: %w", err)
+	}
+
+	database, err := openLocalDatabaseForConfigKeyImport(context.Background(), dbImportConfigKeysDryRun)
+	if err != nil {
+		return err
+	}
+	if database != nil {
+		defer database.Close()
+	}
+
+	results, err := importsync.NewConfigKeyImporter(database).Import(context.Background(), cfg, importsync.ImportConfigKeysOptions{
+		DryRun:  dbImportConfigKeysDryRun,
+		GroupID: dbImportConfigKeysGroupID,
+	})
+	if err != nil {
+		return err
+	}
+	printDBImportConfigKeysResults(results)
+	return nil
+}
+
+func openLocalDatabaseForConfigKeyImport(ctx context.Context, dryRun bool) (*sql.DB, error) {
+	if !dryRun {
+		return openLocalDatabase(ctx)
+	}
+	path, err := resolveDatabasePath()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("检查数据库失败: %w", err)
+	}
+	return codesomedb.OpenReadOnly(path)
+}
+
+func printDBImportConfigKeysResults(results []importsync.ImportConfigKeysResult) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ACTION\tEMPLOYEE_NO\tNAME\tKEY_ID\tGROUP_ID")
+	for _, result := range results {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n",
+			result.Action,
+			result.EmployeeNo,
+			result.UserName,
+			result.CodesomeKeyID,
+			result.GroupID,
+		)
+	}
+	w.Flush()
 }
 
 func resolveDatabasePath() (string, error) {

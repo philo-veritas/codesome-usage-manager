@@ -49,6 +49,14 @@ func TestAPIKeyRepositoryCreateAndUpdateSynced(t *testing.T) {
 	if latest.ID != key.ID {
 		t.Fatalf("expected latest key %d, got %d", key.ID, latest.ID)
 	}
+
+	byCodesomeID, err := repo.GetByCodesomeKeyID(ctx, 6732)
+	if err != nil {
+		t.Fatalf("get by codesome key id: %v", err)
+	}
+	if byCodesomeID.ID != key.ID {
+		t.Fatalf("expected key %d, got %d", key.ID, byCodesomeID.ID)
+	}
 }
 
 func TestAPIKeyRepositoryRejectsInvalidInput(t *testing.T) {

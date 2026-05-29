@@ -28,6 +28,24 @@ func Open(path string) (*sql.DB, error) {
 	return database, nil
 }
 
+func OpenReadOnly(path string) (*sql.DB, error) {
+	if path == "" {
+		return nil, fmt.Errorf("database path is required")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("stat database: %w", err)
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve database path: %w", err)
+	}
+	database, err := sql.Open(DriverName, sqliteReadOnlyDSN(absolutePath))
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	return database, nil
+}
+
 func Init(ctx context.Context, path string) error {
 	if path == "" {
 		return fmt.Errorf("database path is required")
@@ -59,4 +77,12 @@ func sqliteDSN(path string) string {
 		separator = "&"
 	}
 	return path + separator + values.Encode()
+}
+
+func sqliteReadOnlyDSN(path string) string {
+	values := url.Values{}
+	values.Add("mode", "ro")
+	values.Add("_pragma", "foreign_keys(1)")
+	uri := url.URL{Scheme: "file", Path: path, RawQuery: values.Encode()}
+	return uri.String()
 }

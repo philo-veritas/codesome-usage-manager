@@ -150,6 +150,8 @@ Initialize or migrate the local SQLite database:
 codesome db init
 codesome db migrate
 codesome db init --path /tmp/codesome-manager-test.db
+codesome db import-config-keys --dry-run
+codesome db import-config-keys --group-id 51
 ```
 
 Manage local teams:

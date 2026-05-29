@@ -95,6 +95,27 @@ INSERT INTO api_keys (
 	}
 }
 
+func TestOpenReadOnlySupportsRelativePath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	path := "codesome-manager.db"
+
+	if err := Init(context.Background(), path); err != nil {
+		t.Fatalf("init database: %v", err)
+	}
+	database, err := OpenReadOnly(path)
+	if err != nil {
+		t.Fatalf("open read-only database: %v", err)
+	}
+	defer database.Close()
+
+	if !tableExists(t, database, "api_keys") {
+		t.Fatal("expected api_keys table to exist")
+	}
+	if _, err := database.Exec("CREATE TABLE should_not_write (id INTEGER)"); err == nil {
+		t.Fatal("expected write through read-only database to fail")
+	}
+}
+
 func tableExists(t *testing.T, database *sql.DB, table string) bool {
 	t.Helper()
 
