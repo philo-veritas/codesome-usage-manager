@@ -62,7 +62,7 @@ go build ./...
 | API keys | `sync users`, `key export`, `create-key`, `update-key` |
 | Usage | `sync usage`, `usage-stats`, `daily-usage`, default `codesome` usage view |
 | Reports | `report monthly` |
-| Service | `serve`, `auto-switch` |
+| Service | `serve`, `switch-on-exhausted`, `auto-switch` |
 
 ## SQLite Management
 
@@ -184,6 +184,21 @@ Switch one API key to a target group:
 ```bash
 go run . switch-group --key main --group-id 60
 go run . switch-group --key-id 6732 --group-id 60
+```
+
+Switch one API key when its current subscription is below the remaining-budget threshold:
+
+```bash
+go run . switch-on-exhausted --key main
+go run . switch-on-exhausted --key-id 6732
+go run . switch-on-exhausted --key-id 6732 --min-remaining 10
+```
+
+Batch mode reads active API keys from the local SQLite database:
+
+```bash
+go run . switch-on-exhausted --all --min-remaining 10
+go run . switch-on-exhausted --all --path /tmp/codesome-manager.db --min-remaining 10
 ```
 
 ## Auto Switch

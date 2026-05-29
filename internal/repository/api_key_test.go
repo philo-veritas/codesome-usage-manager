@@ -229,3 +229,57 @@ func TestAPIKeyRepositoryListUsageTargetsSkipsDeletedUsers(t *testing.T) {
 		t.Fatalf("unexpected usage targets: %+v", targets)
 	}
 }
+
+func TestAPIKeyRepositoryListActiveSwitchTargets(t *testing.T) {
+	_, userRepo := newTestUserRepositories(t)
+	ctx := context.Background()
+	activeUser, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create active user: %v", err)
+	}
+	inactiveUser, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E99999", Name: "Bob"})
+	if err != nil {
+		t.Fatalf("create inactive user: %v", err)
+	}
+	inactiveStatus := UserStatusInactive
+	if _, err := userRepo.Update(ctx, "E99999", UpdateUserParams{Status: &inactiveStatus}); err != nil {
+		t.Fatalf("deactivate user: %v", err)
+	}
+
+	repo := NewAPIKeyRepository(userRepo.db)
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        activeUser.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create active api key: %v", err)
+	}
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        activeUser.ID,
+		CodesomeKeyID: 6733,
+		Name:          "Alice inactive",
+		Status:        APIKeyStatusInactive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create inactive api key: %v", err)
+	}
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        inactiveUser.ID,
+		CodesomeKeyID: 6734,
+		Name:          "Bob",
+		Status:        APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create inactive user api key: %v", err)
+	}
+
+	targets, err := repo.ListActiveSwitchTargets(ctx)
+	if err != nil {
+		t.Fatalf("list switch targets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].CodesomeKeyID != 6732 || targets[0].Name != "Alice" {
+		t.Fatalf("unexpected switch targets: %+v", targets)
+	}
+}

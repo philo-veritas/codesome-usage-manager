@@ -43,6 +43,11 @@ type APIKeyUsageTarget struct {
 	UserStatus    string
 }
 
+type APIKeySwitchTarget struct {
+	CodesomeKeyID int
+	Name          string
+}
+
 type ListAPIKeyExportRowsParams struct {
 	EmployeeNo      string
 	TeamCode        string
@@ -260,6 +265,35 @@ ORDER BY api_keys.id
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate api key usage targets: %w", err)
+	}
+	return result, nil
+}
+
+func (r *APIKeyRepository) ListActiveSwitchTargets(ctx context.Context) ([]APIKeySwitchTarget, error) {
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+  api_keys.codesome_key_id,
+  api_keys.name
+FROM api_keys
+JOIN users ON api_keys.user_id = users.id
+WHERE users.status = ? AND api_keys.status = ?
+ORDER BY api_keys.id
+`, UserStatusActive, APIKeyStatusActive)
+	if err != nil {
+		return nil, fmt.Errorf("list api key switch targets: %w", err)
+	}
+	defer rows.Close()
+
+	var result []APIKeySwitchTarget
+	for rows.Next() {
+		var target APIKeySwitchTarget
+		if err := rows.Scan(&target.CodesomeKeyID, &target.Name); err != nil {
+			return nil, fmt.Errorf("scan api key switch target: %w", err)
+		}
+		result = append(result, target)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate api key switch targets: %w", err)
 	}
 	return result, nil
 }

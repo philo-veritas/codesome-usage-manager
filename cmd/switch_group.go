@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
 	"codesome-usage-manager/internal/config"
 	"codesome-usage-manager/internal/provider"
+	"codesome-usage-manager/internal/repository"
 )
 
 var (
@@ -55,8 +57,9 @@ func init() {
 
 	switchOnExhaustedCmd.Flags().IntVar(&exhaustedKeyID, "key-id", 0, "要检查的 API Key ID")
 	switchOnExhaustedCmd.Flags().StringVar(&exhaustedKeyAlias, "key", "", "legacy api_key_ids 中的 key 别名")
-	switchOnExhaustedCmd.Flags().BoolVar(&exhaustedAll, "all", false, "检查 legacy api_key_ids 中的所有 API Key")
+	switchOnExhaustedCmd.Flags().BoolVar(&exhaustedAll, "all", false, "检查本地 SQLite 中 active 用户的 active API Key")
 	switchOnExhaustedCmd.Flags().Float64Var(&minRemainingUSD, "min-remaining", 0, "当前 group 剩余额度低于该 USD 阈值时切换")
+	switchOnExhaustedCmd.Flags().StringVar(&dbPath, "path", "", "SQLite 数据库路径（仅 --all 使用）")
 	switchOnExhaustedCmd.MarkFlagsOneRequired("key-id", "key", "all")
 	switchOnExhaustedCmd.MarkFlagsMutuallyExclusive("key-id", "key", "all")
 	rootCmd.AddCommand(switchOnExhaustedCmd)
@@ -109,11 +112,11 @@ func runSwitchOnExhausted(cmd *cobra.Command, args []string) error {
 	}
 
 	if exhaustedAll {
-		codesome := cfg.GetCodesomeConfig()
-		if len(codesome.ApiKeyIDs) == 0 {
-			return fmt.Errorf("未配置 legacy api_key_ids")
+		keyConfigs, err := loadSwitchOnExhaustedAllKeyConfigs(context.Background())
+		if err != nil {
+			return err
 		}
-		results, summary, err := provider.SwitchCodesomeKeysGroupOnExhaustedWithSummary(cfg, codesome.ApiKeyIDs, minRemainingUSD)
+		results, summary, err := provider.SwitchCodesomeKeysGroupOnExhaustedWithSummary(cfg, keyConfigs, minRemainingUSD)
 		if err != nil {
 			return fmt.Errorf("批量自动切换 group 失败: %w", err)
 		}
@@ -135,6 +138,31 @@ func runSwitchOnExhausted(cmd *cobra.Command, args []string) error {
 	}
 	printGroupSwitchResult(result)
 	return nil
+}
+
+func loadSwitchOnExhaustedAllKeyConfigs(ctx context.Context) ([]config.CodesomeApiKeyId, error) {
+	database, err := openLocalDatabase(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer database.Close()
+
+	targets, err := repository.NewAPIKeyRepository(database).ListActiveSwitchTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("本地数据库未找到 active API Key，请先运行 codesome db import-remote-keys 或 codesome sync users")
+	}
+
+	keyConfigs := make([]config.CodesomeApiKeyId, 0, len(targets))
+	for _, target := range targets {
+		keyConfigs = append(keyConfigs, config.CodesomeApiKeyId{
+			ID:   target.CodesomeKeyID,
+			Name: target.Name,
+		})
+	}
+	return keyConfigs, nil
 }
 
 func printGroupSwitchResult(result *provider.CodesomeGroupSwitchResult) {
