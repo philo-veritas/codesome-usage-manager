@@ -2,12 +2,67 @@
 
 Go CLI and HTTP API for SQLite-backed Codesome API Key management, usage sync, and reporting.
 
+## Quick Start
+
+Prerequisites:
+
+- Go 1.25 or newer.
+- A Codesome account that can log in to `https://v3.codesome.cn`.
+- Docker Compose, only if you want to run the HTTP API in Docker.
+
+Create a local config and initialize the database:
+
+```bash
+cp config.yaml.example config.yaml
+$EDITOR config.yaml
+go build -o codesome .
+./codesome db init
+```
+
+Import existing Codesome API keys from the remote API into SQLite:
+
+```bash
+./codesome db import-remote-keys --dry-run
+./codesome db import-remote-keys
+```
+
+Common first commands:
+
+```bash
+./codesome team add --code platform --name "Platform"
+./codesome user add --employee-no E12345 --name "Alice" --team platform --group-id 51
+./codesome sync users --dry-run
+./codesome sync usage --yesterday
+./codesome report monthly --month 2026-05
+```
+
 ## Build
 
 ```bash
-go mod tidy
-go build -o codesome .
+make build-dev
+make test
+make check
 ```
+
+Without Make:
+
+```bash
+go build -o codesome .
+go test ./...
+go build ./...
+```
+
+## Command Overview
+
+| Area | Commands |
+| --- | --- |
+| Database | `db init`, `db migrate`, `db import-remote-keys`, `db import-config-keys` |
+| Teams | `team add`, `team update`, `team list` |
+| Users | `user add`, `user update`, `user delete`, `user list` |
+| API keys | `sync users`, `key export`, `create-key`, `update-key` |
+| Usage | `sync usage`, `usage-stats`, `daily-usage`, default `codesome` usage view |
+| Reports | `report monthly` |
+| Service | `serve`, `auto-switch` |
 
 ## SQLite Management
 
@@ -19,9 +74,13 @@ Initialize or migrate the local SQLite database:
 codesome db init
 codesome db migrate
 codesome db init --path /tmp/codesome-manager-test.db
+codesome db import-remote-keys --dry-run
+codesome db import-remote-keys
 codesome db import-config-keys --dry-run
 codesome db import-config-keys --group-id 51
 ```
+
+`db import-remote-keys` is the preferred bootstrap path. It reads the current Codesome API Key list through the Codesome API and creates virtual local users such as `codesome-key:6732` for keys that are not yet assigned to a real employee. You can later update those users and teams manually.
 
 Manage local teams:
 
@@ -170,14 +229,29 @@ POST /api/codesome/switch-on-exhausted?key_id=6732
 Run the API with Docker Compose:
 
 ```bash
-docker compose up -d --build
+cp config.yaml.example config.yaml
+$EDITOR config.yaml
+make compose-up
 ```
 
 The compose files persist auth/cache files and `codesome-manager.db` on the host. The state-changing auto switcher is opt-in and operates on all Codesome API keys:
 
 ```bash
-docker compose --profile auto-switch up -d --build
-docker compose logs -f usage-auto-switch
+make compose-up-auto
+make compose-logs-auto
+```
+
+If you call `docker compose` directly, create the bind-mounted state files first:
+
+```bash
+make ensure-state-files
+docker compose up -d --build
+```
+
+The base compose file publishes the API on host port `8055`. The container command binds the app to `0.0.0.0` so Docker port publishing and nginx proxying work; the local `serve` command still defaults to `127.0.0.1`. Use `docker-compose.nginx.yml` only when you intentionally want an nginx front end:
+
+```bash
+make compose-up-nginx
 ```
 
 ## Config
@@ -198,7 +272,7 @@ database:
 
 Runtime state is stored in `.codesome_auth.json` and `.usage_cache.json`. Do not commit those files.
 
-`api_key_ids` is a legacy static key list. New SQLite-backed commands use the local database as their key source. Keep `api_key_ids` only when you still need legacy alias commands, or when importing old config keys into SQLite:
+`api_key_ids` is a legacy static key list. New SQLite-backed commands use the local database as their key source, and new setups should prefer `codesome db import-remote-keys`. Keep `api_key_ids` only when you still need legacy alias commands, or when the remote API is unavailable and you must import old config keys into SQLite:
 
 ```yaml
 codesome:
@@ -211,5 +285,8 @@ codesome:
 ## Test
 
 ```bash
-go test ./...
+make test
+make check
 ```
+
+`make check` runs both `go test ./...` and `go build ./...`.

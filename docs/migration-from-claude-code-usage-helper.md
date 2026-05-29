@@ -305,6 +305,7 @@ codesome serve --host 127.0.0.1 --port 8080
 ```bash
 codesome db init
 codesome db migrate
+codesome db import-remote-keys
 codesome db import-config-keys
 
 codesome team add --code platform --name "Platform"
@@ -479,11 +480,12 @@ config.yaml
 5. 实现 `key export`。
 6. 实现 `sync usage`。
 7. 实现 `report monthly`。
-8. 实现 `db import-config-keys`。
+8. 实现 `db import-remote-keys` 和 `db import-config-keys`。
 
 验收：
 
 - 新功能不依赖 `config.yaml.api_key_ids`。
+- 可从 Codesome API 导入现有 key。
 - 可从旧配置导入 legacy keys。
 - usage 同步可幂等 upsert。
 - inactive team 下不能新增 active user，也不能把已有 user 更新为 active。

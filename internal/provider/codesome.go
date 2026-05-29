@@ -725,6 +725,15 @@ func GetCodesomeKeyUsageStats(cfg *config.Config, keyID int, startDate string, e
 	return client.fetchKeyUsageStats(keyID, startDate, endDate, forceUpdate)
 }
 
+// ListCodesomeKeys returns Codesome API keys from the remote API or cache.
+func ListCodesomeKeys(cfg *config.Config, forceUpdate bool) ([]CodesomeApiKey, error) {
+	if cfg == nil || cfg.GetCodesomeConfig() == nil {
+		return nil, fmt.Errorf("未找到 Codesome 配置")
+	}
+	client := newCodesomeClient(cfg)
+	return client.fetchApiKeys(forceUpdate)
+}
+
 // CreateCodesomeKey creates a Codesome API key and clears key-related caches.
 func CreateCodesomeKey(cfg *config.Config, name string, groupID int) (*CodesomeApiKeyWithSecret, error) {
 	name = strings.TrimSpace(name)

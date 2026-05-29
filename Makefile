@@ -4,14 +4,22 @@ NGINX_COMPOSE := -f docker-compose.nginx.yml
 STATE_FILES := .usage_cache.json .codesome_auth.json
 DB_FILE := codesome-manager.db
 
-.PHONY: build-dev help ensure-state-files compose-build compose-up compose-up-auto compose-up-nginx compose-down compose-down-nginx compose-restart compose-restart-auto compose-restart-nginx compose-logs compose-logs-auto compose-ps compose-ps-nginx
+.PHONY: build-dev test check help ensure-state-files compose-build compose-up compose-up-auto compose-up-nginx compose-down compose-down-nginx compose-restart compose-restart-auto compose-restart-nginx compose-logs compose-logs-auto compose-ps compose-ps-nginx
 
 build-dev:
 	go build -o codesome .
 
+test:
+	go test ./...
+
+check: test
+	go build ./...
+
 help:
 	@echo "Common targets:"
 	@echo "  build-dev              Build local Go binary"
+	@echo "  test                   Run Go tests"
+	@echo "  check                  Run tests and package build"
 	@echo "  compose-build          Build Docker images"
 	@echo "  compose-up             Start API service"
 	@echo "  compose-up-auto        Start API and auto-switch profile"

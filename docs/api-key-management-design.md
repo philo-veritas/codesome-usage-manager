@@ -353,9 +353,23 @@ GET    /api/codesome/reports/monthly?month=2026-05
 - 涉及创建、更新、删除、同步的 HTTP API 如未来对外提供，必须要求认证或仅暴露在可信内网。
 - 创建 key 返回的 `sk-...` 只能返回给创建请求，不应写入日志。
 
-## 从 config.yaml 迁移
+## 从远程 API 或 config.yaml 迁移
 
-提供一次性导入命令：
+首选一次性导入命令：
+
+```bash
+codesome db import-remote-keys
+```
+
+远程导入策略：
+
+1. 通过 Codesome API 读取当前 API Key 列表。
+2. 为每个尚未入库的 key 创建一个 virtual user，例如 `employee_no = codesome-key:<id>`。
+3. 写入 `api_keys.codesome_key_id`、`name`、`status`、`group_id`。
+4. 不填 `raw_key`。
+5. 后续人工把 virtual user 归并到真实研发个人和团队，并保留历史 usage 可追溯。
+
+`config.yaml` 导入只作为 legacy 兜底：
 
 ```bash
 codesome db import-config-keys
@@ -398,6 +412,7 @@ codesome db import-config-keys
 
 ### 阶段 5：迁移与废弃静态 key 清单
 
+- 实现 `db import-remote-keys` 作为默认 bootstrap 路径。
 - 实现 `db import-config-keys`。
 - 文档标记 `api_key_ids` 为 legacy。
 - 新功能默认不读取 `api_key_ids`。

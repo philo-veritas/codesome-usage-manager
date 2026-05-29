@@ -1,4 +1,5 @@
 # Copy to config.yaml and fill in real credentials locally.
+# config.yaml, auth/cache JSON files, and SQLite DB files are intentionally ignored by git.
 codesome:
   base_url: "https://v3.codesome.cn"
   login:
@@ -6,11 +7,13 @@ codesome:
     password: "your-password"
   default_group_id: 51
   # Legacy only: keep api_key_ids when you need old alias-based commands,
-  # or run `codesome db import-config-keys` to import them into SQLite.
+  # or run `codesome db import-config-keys` as a fallback when remote import is unavailable.
+  # Prefer `codesome db import-remote-keys` for new SQLite bootstraps.
   # api_key_ids:
   #   - id: 6732
   #     name: "main"
   #     key: "main"
 
 database:
+  # Keep this path aligned with Docker volume mounts if you deploy with compose.
   path: "./codesome-manager.db"

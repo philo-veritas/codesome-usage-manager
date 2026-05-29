@@ -11,12 +11,14 @@ import (
 
 	"codesome-usage-manager/internal/config"
 	codesomedb "codesome-usage-manager/internal/db"
+	"codesome-usage-manager/internal/provider"
 	importsync "codesome-usage-manager/internal/sync"
 )
 
 var dbPath string
 var dbImportConfigKeysDryRun bool
 var dbImportConfigKeysGroupID int
+var dbImportRemoteKeysDryRun bool
 
 var dbCmd = &cobra.Command{
 	Use:   "db",
@@ -41,10 +43,18 @@ var dbImportConfigKeysCmd = &cobra.Command{
 	RunE:  runDBImportConfigKeys,
 }
 
+var dbImportRemoteKeysCmd = &cobra.Command{
+	Use:   "import-remote-keys",
+	Short: "从 Codesome API 导入远程 API Key 清单到本地数据库",
+	RunE:  runDBImportRemoteKeys,
+}
+
 func init() {
 	dbCmd.PersistentFlags().StringVar(&dbPath, "path", "", "SQLite 数据库路径")
 	dbCmd.AddCommand(dbInitCmd)
 	dbCmd.AddCommand(dbMigrateCmd)
+	dbImportRemoteKeysCmd.Flags().BoolVar(&dbImportRemoteKeysDryRun, "dry-run", false, "只输出导入计划，不写入数据库")
+	dbCmd.AddCommand(dbImportRemoteKeysCmd)
 	dbImportConfigKeysCmd.Flags().BoolVar(&dbImportConfigKeysDryRun, "dry-run", false, "只输出导入计划，不写入数据库")
 	dbImportConfigKeysCmd.Flags().IntVar(&dbImportConfigKeysGroupID, "group-id", 0, "导入 legacy key 使用的 Codesome group ID")
 	dbCmd.AddCommand(dbImportConfigKeysCmd)
@@ -87,7 +97,7 @@ func runDBImportConfigKeys(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("加载配置失败: %w", err)
 	}
 
-	database, err := openLocalDatabaseForConfigKeyImport(context.Background(), dbImportConfigKeysDryRun)
+	database, err := openLocalDatabaseForImport(context.Background(), dbImportConfigKeysDryRun)
 	if err != nil {
 		return err
 	}
@@ -106,7 +116,36 @@ func runDBImportConfigKeys(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func openLocalDatabaseForConfigKeyImport(ctx context.Context, dryRun bool) (*sql.DB, error) {
+func runDBImportRemoteKeys(cmd *cobra.Command, args []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("加载配置失败: %w", err)
+	}
+
+	remoteKeys, err := provider.ListCodesomeKeys(cfg, true)
+	if err != nil {
+		return fmt.Errorf("获取远程 API Key 失败: %w", err)
+	}
+
+	database, err := openLocalDatabaseForImport(context.Background(), dbImportRemoteKeysDryRun)
+	if err != nil {
+		return err
+	}
+	if database != nil {
+		defer database.Close()
+	}
+
+	results, err := importsync.NewRemoteKeyImporter(database).Import(context.Background(), remoteKeys, importsync.ImportRemoteKeysOptions{
+		DryRun: dbImportRemoteKeysDryRun,
+	})
+	if err != nil {
+		return err
+	}
+	printDBImportRemoteKeysResults(results)
+	return nil
+}
+
+func openLocalDatabaseForImport(ctx context.Context, dryRun bool) (*sql.DB, error) {
 	if !dryRun {
 		return openLocalDatabase(ctx)
 	}
@@ -124,6 +163,21 @@ func openLocalDatabaseForConfigKeyImport(ctx context.Context, dryRun bool) (*sql
 }
 
 func printDBImportConfigKeysResults(results []importsync.ImportConfigKeysResult) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ACTION\tEMPLOYEE_NO\tNAME\tKEY_ID\tGROUP_ID")
+	for _, result := range results {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n",
+			result.Action,
+			result.EmployeeNo,
+			result.UserName,
+			result.CodesomeKeyID,
+			result.GroupID,
+		)
+	}
+	w.Flush()
+}
+
+func printDBImportRemoteKeysResults(results []importsync.ImportRemoteKeysResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ACTION\tEMPLOYEE_NO\tNAME\tKEY_ID\tGROUP_ID")
 	for _, result := range results {
