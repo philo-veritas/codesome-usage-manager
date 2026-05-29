@@ -492,7 +492,7 @@ config.yaml
 ### 阶段 6：当前仓库收尾
 
 1. 当前仓库 README 标记 Codesome 管理能力已迁移。已完成。
-2. 保留 Go Codesome 代码，定位为 Codesome-only 管理工具，并将旧 alias 命令说明为 legacy/simple usage helper。
+2. 保留 Go Codesome 代码，定位为 Codesome-only 管理工具，并将旧 alias 命令说明为 legacy/simple usage helper。已完成。
 3. 删除或停用重复部署脚本。已删除 daily reset cron，Docker/compose 只保留 Codesome 服务和 opt-in auto-switch。
 4. 移除旧 `providers` 配置 fallback。已完成，只支持 top-level `codesome`。
 
@@ -502,6 +502,13 @@ config.yaml
 - 新仓库承接 Codesome 管理职责。
 - 没有两个仓库都在维护同一套 Codesome 管理逻辑。
 - 业务代码不再包含 Claude Buddy / 88Code / 多 provider 配置模型。
+
+阶段 6 已完成最终验收：
+
+- `go test ./...` 通过。
+- `go build ./...` 通过。
+- `rg "Claude Buddy|claude-buddy|Codex Buddy|88Code|eightcode|ANTHROPIC_" .` 只命中迁移文档中的历史说明。
+- `providers` 词本身仍会命中 legacy 配置忽略测试和 Codesome provider 包命名，不代表运行时仍保留多 provider 配置模型。
 
 ## 裁剪清单
 
