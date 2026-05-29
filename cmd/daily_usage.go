@@ -27,7 +27,7 @@ var dailyUsageCmd = &cobra.Command{
 
 func init() {
 	dailyUsageCmd.Flags().IntVar(&dailyKeyID, "key-id", 0, "要查询的 API Key ID")
-	dailyUsageCmd.Flags().StringVar(&dailyKeyAlias, "key", "", "配置文件中的 key 别名")
+	dailyUsageCmd.Flags().StringVar(&dailyKeyAlias, "key", "", "legacy api_key_ids 中的 key 别名")
 	dailyUsageCmd.MarkFlagsOneRequired("key-id", "key")
 	dailyUsageCmd.MarkFlagsMutuallyExclusive("key-id", "key")
 	rootCmd.AddCommand(dailyUsageCmd)

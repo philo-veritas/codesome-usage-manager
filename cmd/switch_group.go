@@ -46,7 +46,7 @@ var switchOnExhaustedCmd = &cobra.Command{
 
 func init() {
 	switchGroupCmd.Flags().IntVar(&switchKeyID, "key-id", 0, "要切换 group 的 API Key ID")
-	switchGroupCmd.Flags().StringVar(&switchKeyAlias, "key", "", "配置文件中的 key 别名")
+	switchGroupCmd.Flags().StringVar(&switchKeyAlias, "key", "", "legacy api_key_ids 中的 key 别名")
 	switchGroupCmd.Flags().IntVar(&switchGroupID, "group-id", 0, "目标 group ID")
 	switchGroupCmd.MarkFlagsOneRequired("key-id", "key")
 	switchGroupCmd.MarkFlagsMutuallyExclusive("key-id", "key")
@@ -54,8 +54,8 @@ func init() {
 	rootCmd.AddCommand(switchGroupCmd)
 
 	switchOnExhaustedCmd.Flags().IntVar(&exhaustedKeyID, "key-id", 0, "要检查的 API Key ID")
-	switchOnExhaustedCmd.Flags().StringVar(&exhaustedKeyAlias, "key", "", "配置文件中的 key 别名")
-	switchOnExhaustedCmd.Flags().BoolVar(&exhaustedAll, "all", false, "检查配置文件 api_key_ids 中的所有 API Key")
+	switchOnExhaustedCmd.Flags().StringVar(&exhaustedKeyAlias, "key", "", "legacy api_key_ids 中的 key 别名")
+	switchOnExhaustedCmd.Flags().BoolVar(&exhaustedAll, "all", false, "检查 legacy api_key_ids 中的所有 API Key")
 	switchOnExhaustedCmd.Flags().Float64Var(&minRemainingUSD, "min-remaining", 0, "当前 group 剩余额度低于该 USD 阈值时切换")
 	switchOnExhaustedCmd.MarkFlagsOneRequired("key-id", "key", "all")
 	switchOnExhaustedCmd.MarkFlagsMutuallyExclusive("key-id", "key", "all")
@@ -111,7 +111,7 @@ func runSwitchOnExhausted(cmd *cobra.Command, args []string) error {
 	if exhaustedAll {
 		codesome := cfg.GetCodesomeConfig()
 		if len(codesome.ApiKeyIDs) == 0 {
-			return fmt.Errorf("未配置 api_key_ids")
+			return fmt.Errorf("未配置 legacy api_key_ids")
 		}
 		results, summary, err := provider.SwitchCodesomeKeysGroupOnExhaustedWithSummary(cfg, codesome.ApiKeyIDs, minRemainingUSD)
 		if err != nil {

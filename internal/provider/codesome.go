@@ -907,7 +907,7 @@ func SwitchCodesomeKeysGroupOnExhaustedWithSummary(
 		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("min_remaining 必须大于等于 0")
 	}
 	if len(keyConfigs) == 0 {
-		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("未配置 api_key_ids")
+		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("未配置 legacy api_key_ids")
 	}
 
 	client := newCodesomeClient(cfg)
@@ -970,7 +970,7 @@ func SwitchCodesomeKeysToBestGroup(
 	keyConfigs []config.CodesomeApiKeyId,
 ) ([]CodesomeGroupSwitchBatchResult, error) {
 	if len(keyConfigs) == 0 {
-		return nil, fmt.Errorf("未配置 api_key_ids")
+		return nil, fmt.Errorf("未配置 legacy api_key_ids")
 	}
 
 	client := newCodesomeClient(cfg)

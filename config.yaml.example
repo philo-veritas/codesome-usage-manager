@@ -5,10 +5,12 @@ codesome:
     email: "your-email@example.com"
     password: "your-password"
   default_group_id: 51
-  api_key_ids:
-    - id: 6732
-      name: "main"
-      key: "main"
+  # Legacy only: keep api_key_ids when you need old alias-based commands,
+  # or run `codesome db import-config-keys` to import them into SQLite.
+  # api_key_ids:
+  #   - id: 6732
+  #     name: "main"
+  #     key: "main"
 
 database:
   path: "./codesome-manager.db"

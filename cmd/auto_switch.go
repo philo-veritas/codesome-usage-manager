@@ -45,7 +45,7 @@ var autoSwitchCmd = &cobra.Command{
 }
 
 func init() {
-	autoSwitchCmd.Flags().BoolVar(&autoSwitchAll, "all", false, "检查并切换配置文件 api_key_ids 中的所有 API Key")
+	autoSwitchCmd.Flags().BoolVar(&autoSwitchAll, "all", false, "检查并切换 legacy api_key_ids 中的所有 API Key")
 	autoSwitchCmd.Flags().Float64Var(&autoSwitchMinRemaining, "min-remaining", 10, "当前 group 剩余额度低于该 USD 阈值时切换")
 	autoSwitchCmd.Flags().DurationVar(&autoSwitchMinInterval, "min-interval", defaultMinInterval, "最短检查间隔")
 	autoSwitchCmd.Flags().DurationVar(&autoSwitchMaxInterval, "max-interval", defaultMaxInterval, "最长检查间隔")
@@ -73,7 +73,7 @@ func runAutoSwitch(cmd *cobra.Command, args []string) error {
 	}
 	codesome := cfg.GetCodesomeConfig()
 	if len(codesome.ApiKeyIDs) == 0 {
-		return fmt.Errorf("未配置 api_key_ids")
+		return fmt.Errorf("未配置 legacy api_key_ids")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

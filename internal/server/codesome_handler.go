@@ -252,7 +252,7 @@ func DailyUsageHandler(cfg *config.Config) http.HandlerFunc {
 }
 
 // ResetAllQuotasHandler handles POST /api/codesome/reset-all-quotas
-// Iterates over all configured api_key_ids and resets each one.
+// Iterates over all configured legacy api_key_ids and resets each one.
 func ResetAllQuotasHandler(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -266,7 +266,7 @@ func ResetAllQuotasHandler(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		if len(codesome.ApiKeyIDs) == 0 {
-			http.Error(w, "未配置 api_key_ids", http.StatusBadRequest)
+			http.Error(w, "未配置 legacy api_key_ids", http.StatusBadRequest)
 			return
 		}
 

@@ -23,7 +23,7 @@ var resetQuotaCmd = &cobra.Command{
 
 func init() {
 	resetQuotaCmd.Flags().IntVar(&keyID, "key-id", 0, "要重置配额的 API Key ID")
-	resetQuotaCmd.Flags().StringVar(&keyAlias, "key", "", "配置文件中的 key 别名")
+	resetQuotaCmd.Flags().StringVar(&keyAlias, "key", "", "legacy api_key_ids 中的 key 别名")
 	resetQuotaCmd.MarkFlagsOneRequired("key-id", "key")
 	resetQuotaCmd.MarkFlagsMutuallyExclusive("key-id", "key")
 	rootCmd.AddCommand(resetQuotaCmd)

@@ -124,7 +124,7 @@ POST /api/codesome/switch-on-exhausted?key_id=6732
 
 ## Config
 
-Codesome keys can be given aliases in `config.yaml`:
+`config.yaml` stores Codesome connection settings and the local SQLite database path:
 
 ```yaml
 codesome:
@@ -133,16 +133,22 @@ codesome:
     email: "your-email@example.com"
     password: "your-password"
   default_group_id: 51
-  api_key_ids:
-    - id: 6732
-      name: "architecture-extra"
-      key: "main"
 
 database:
   path: "./codesome-manager.db"
 ```
 
 Runtime state is stored in `.codesome_auth.json` and `.usage_cache.json`. Do not commit those files.
+
+`api_key_ids` is a legacy static key list. New SQLite-backed commands use the local database as their key source. Keep `api_key_ids` only when you still need legacy alias commands, or when importing old config keys into SQLite:
+
+```yaml
+codesome:
+  api_key_ids:
+    - id: 6732
+      name: "architecture-extra"
+      key: "main"
+```
 
 Initialize or migrate the local SQLite database:
 
