@@ -25,24 +25,15 @@ type CodesomeApiKeyId struct {
 }
 
 type CodesomeConfig struct {
-	BaseURL          string             `yaml:"base_url"`
-	Login            *LoginCredentials  `yaml:"login"`
-	DefaultGroupID   int                `yaml:"default_group_id"`
-	ApiKeyIDs        []CodesomeApiKeyId `yaml:"api_key_ids"`
-	LoginCredentials *LoginCredentials  `yaml:"login_credentials,omitempty"`
-}
-
-type legacyProviderConfig struct {
-	Name             string             `yaml:"name"`
-	BaseURL          string             `yaml:"base_url"`
-	LoginCredentials *LoginCredentials  `yaml:"login_credentials"`
-	ApiKeyIDs        []CodesomeApiKeyId `yaml:"api_key_ids"`
+	BaseURL        string             `yaml:"base_url"`
+	Login          *LoginCredentials  `yaml:"login"`
+	DefaultGroupID int                `yaml:"default_group_id"`
+	ApiKeyIDs      []CodesomeApiKeyId `yaml:"api_key_ids"`
 }
 
 type Config struct {
-	Codesome  *CodesomeConfig        `yaml:"codesome"`
-	Database  DatabaseConfig         `yaml:"database"`
-	Providers []legacyProviderConfig `yaml:"providers,omitempty"`
+	Codesome *CodesomeConfig `yaml:"codesome"`
+	Database DatabaseConfig  `yaml:"database"`
 }
 
 type DatabaseConfig struct {
@@ -71,7 +62,7 @@ func (c *Config) DatabasePath() string {
 	return DefaultDatabasePath
 }
 
-// GetCodesomeConfig returns the Codesome config, including legacy provider fallback.
+// GetCodesomeConfig returns the top-level Codesome config.
 func (c *Config) GetCodesomeConfig() *CodesomeConfig {
 	if c == nil {
 		return nil
@@ -79,17 +70,6 @@ func (c *Config) GetCodesomeConfig() *CodesomeConfig {
 	if c.Codesome != nil {
 		c.Codesome.normalize()
 		return c.Codesome
-	}
-	for _, provider := range c.Providers {
-		if provider.Name == "Codesome" {
-			c.Codesome = &CodesomeConfig{
-				BaseURL:   provider.BaseURL,
-				Login:     provider.LoginCredentials,
-				ApiKeyIDs: provider.ApiKeyIDs,
-			}
-			c.Codesome.normalize()
-			return c.Codesome
-		}
 	}
 	return nil
 }
@@ -99,9 +79,6 @@ func (c *CodesomeConfig) normalize() {
 		c.BaseURL = DefaultCodesomeBaseURL
 	}
 	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
-	if c.Login == nil && c.LoginCredentials != nil {
-		c.Login = c.LoginCredentials
-	}
 }
 
 // GetCodesomeLoginCredentials returns login credentials for Codesome

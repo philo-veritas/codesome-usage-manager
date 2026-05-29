@@ -257,26 +257,27 @@ server:
   port: 8080
 ```
 
-兼容迁移期可以支持读取旧配置，但不作为长期格式：
+旧 `providers` 配置格式已移除，不再作为运行时兼容格式。旧配置需要迁移为 top-level `codesome`：
 
 ```yaml
-providers:
-  - name: "Codesome"
-    base_url: "https://v3.codesome.cn"
-    login_credentials:
-      email: "your-email@example.com"
-      password: "your-password"
-    api_key_ids:
-      - id: 6732
-        name: "team-a"
-        key: "main"
+codesome:
+  base_url: "https://v3.codesome.cn"
+  login:
+    email: "your-email@example.com"
+    password: "your-password"
+  default_group_id: 51
+  api_key_ids:
+    - id: 6732
+      name: "team-a"
+      key: "main"
 ```
 
-长期策略：
+最终策略：
 
-- `login_credentials` 迁移为 `codesome.login`。
+- `providers` 已移除，只支持 top-level `codesome`。
+- `login_credentials` 已迁移为 `codesome.login`。
 - `api_key_ids` 迁移到 SQLite。
-- 旧配置只用于 `db import-config-keys`。
+- `api_key_ids` 只作为 legacy 静态 key 清单，用于旧 alias 命令或 `db import-config-keys`。
 
 ## 命令设计
 
@@ -294,7 +295,7 @@ codesome reset-quota --key-id 6732
 
 codesome switch-group --key-id 6732 --group-id 60
 codesome switch-on-exhausted --all --min-remaining 10
-codesome auto-switch --all --min-remaining 10 --min-interval 2m --max-interval 2h
+codesome auto-switch --min-remaining 10 --min-interval 2m --max-interval 2h
 
 codesome serve --host 127.0.0.1 --port 8080
 ```
@@ -341,7 +342,6 @@ POST /api/codesome/keys
 PUT  /api/codesome/keys
 GET  /api/codesome/daily-usage
 POST /api/codesome/reset-quota
-POST /api/codesome/reset-all-quotas
 POST /api/codesome/switch-group
 POST /api/codesome/switch-on-exhausted
 ```
@@ -491,16 +491,17 @@ config.yaml
 
 ### 阶段 6：当前仓库收尾
 
-1. 当前仓库 README 标记 Codesome 管理能力已迁移。
-2. 保留或删除当前 Go Codesome 代码，根据实际迁移完成度决定。
-3. 如果保留，说明它是 legacy/simple usage helper。
-4. 删除或停用重复部署脚本。
+1. 当前仓库 README 标记 Codesome 管理能力已迁移。已完成。
+2. 保留 Go Codesome 代码，定位为 Codesome-only 管理工具，并将旧 alias 命令说明为 legacy/simple usage helper。
+3. 删除或停用重复部署脚本。已删除 daily reset cron，Docker/compose 只保留 Codesome 服务和 opt-in auto-switch。
+4. 移除旧 `providers` 配置 fallback。已完成，只支持 top-level `codesome`。
 
 验收：
 
 - 当前仓库定位回到 usage helper。
 - 新仓库承接 Codesome 管理职责。
 - 没有两个仓库都在维护同一套 Codesome 管理逻辑。
+- 业务代码不再包含 Claude Buddy / 88Code / 多 provider 配置模型。
 
 ## 裁剪清单
 
@@ -511,7 +512,7 @@ internal/provider/claude_buddy.go
 internal/server/handler.go
 cmd/sync.go
 cmd/root.go 中的 provider auto-detect
-internal/config/config.go 中的 Claude Buddy / 88Code 配置模型
+internal/config/config.go 中的 Claude Buddy / 88Code / providers 配置模型
 README 中的 Claude Buddy / Codex Buddy 说明
 Docker/compose 中的非 Codesome 路由或服务
 ```
@@ -558,7 +559,7 @@ go build ./...
 
 - Codesome key 创建接口会返回完整 `sk-...`，必须避免日志泄露。
 - 迁移时不要提交真实 `.codesome_auth.json` 或 `config.yaml`。
-- `auto-switch` 是状态变更能力，迁移后仍需默认安全保守。
+- `auto-switch` 是状态变更能力，已改为 opt-in，并只处理 active Codesome API Key。
 - 新仓库如果提供 HTTP 管理 API，必须明确部署边界。
 - SQLite 迁移后，`api_key_ids` 不应继续作为新功能的数据源。
 - 不要在迁移初期同时改业务逻辑和做大规模架构重写；先保证现有 Codesome 能力在新仓库可运行。

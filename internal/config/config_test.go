@@ -41,7 +41,7 @@ codesome:
 	}
 }
 
-func TestGetCodesomeConfigSupportsLegacyProviders(t *testing.T) {
+func TestGetCodesomeConfigIgnoresLegacyProviders(t *testing.T) {
 	var cfg Config
 	if err := yaml.Unmarshal([]byte(`
 providers:
@@ -59,17 +59,8 @@ providers:
 	}
 
 	codesome := cfg.GetCodesomeConfig()
-	if codesome == nil {
-		t.Fatal("expected Codesome config")
-	}
-	if codesome.BaseURL != "https://legacy.example.test" {
-		t.Fatalf("unexpected base URL: %s", codesome.BaseURL)
-	}
-	if codesome.Login == nil || codesome.Login.Email != "legacy@example.test" {
-		t.Fatalf("unexpected login config: %+v", codesome.Login)
-	}
-	if len(codesome.ApiKeyIDs) != 1 || codesome.ApiKeyIDs[0].ID != 6732 {
-		t.Fatalf("unexpected api_key_ids: %+v", codesome.ApiKeyIDs)
+	if codesome != nil {
+		t.Fatalf("expected legacy providers to be ignored, got %+v", codesome)
 	}
 }
 
