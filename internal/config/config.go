@@ -10,6 +10,7 @@ import (
 
 const (
 	DefaultCodesomeBaseURL = "https://v3.codesome.cn"
+	DefaultFeishuBaseURL   = "https://open.feishu.cn/open-apis"
 	DefaultDatabasePath    = "codesome-manager.db"
 )
 
@@ -33,11 +34,39 @@ type CodesomeConfig struct {
 
 type Config struct {
 	Codesome *CodesomeConfig `yaml:"codesome"`
+	Feishu   *FeishuConfig   `yaml:"feishu"`
 	Database DatabaseConfig  `yaml:"database"`
 }
 
 type DatabaseConfig struct {
 	Path string `yaml:"path"`
+}
+
+type FeishuConfig struct {
+	BaseURL   string        `yaml:"base_url"`
+	AppID     string        `yaml:"app_id"`
+	AppSecret string        `yaml:"app_secret"`
+	Bitable   FeishuBitable `yaml:"bitable"`
+}
+
+type FeishuBitable struct {
+	AppToken string           `yaml:"app_token"`
+	Users    FeishuUsersTable `yaml:"users"`
+}
+
+type FeishuUsersTable struct {
+	TableID string           `yaml:"table_id"`
+	ViewID  string           `yaml:"view_id"`
+	Fields  FeishuUserFields `yaml:"fields"`
+}
+
+type FeishuUserFields struct {
+	EmployeeNo string `yaml:"employee_no"`
+	Name       string `yaml:"name"`
+	Team       string `yaml:"team"`
+	GroupID    string `yaml:"group_id"`
+	Status     string `yaml:"status"`
+	OpenID     string `yaml:"open_id"`
 }
 
 // LoadConfig loads config.yaml from the current working directory.
@@ -74,9 +103,24 @@ func (c *Config) GetCodesomeConfig() *CodesomeConfig {
 	return nil
 }
 
+func (c *Config) GetFeishuConfig() *FeishuConfig {
+	if c == nil || c.Feishu == nil {
+		return nil
+	}
+	c.Feishu.normalize()
+	return c.Feishu
+}
+
 func (c *CodesomeConfig) normalize() {
 	if c.BaseURL == "" {
 		c.BaseURL = DefaultCodesomeBaseURL
+	}
+	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+}
+
+func (c *FeishuConfig) normalize() {
+	if c.BaseURL == "" {
+		c.BaseURL = DefaultFeishuBaseURL
 	}
 	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
 }

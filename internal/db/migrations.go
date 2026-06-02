@@ -87,6 +87,22 @@ CREATE TABLE sync_runs (
 );
 `,
 	},
+	{
+		Version: 2,
+		Name:    "add_user_feishu_open_id",
+		SQL: `
+ALTER TABLE users ADD COLUMN feishu_open_id TEXT;
+CREATE INDEX idx_users_feishu_open_id ON users(feishu_open_id);
+`,
+	},
+	{
+		Version: 3,
+		Name:    "unique_user_feishu_open_id",
+		SQL: `
+DROP INDEX IF EXISTS idx_users_feishu_open_id;
+CREATE UNIQUE INDEX idx_users_feishu_open_id ON users(feishu_open_id) WHERE feishu_open_id IS NOT NULL;
+`,
+	},
 }
 
 func Migrate(ctx context.Context, database *sql.DB) error {

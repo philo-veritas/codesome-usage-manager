@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	codesomedb "codesome-usage-manager/internal/db"
@@ -64,6 +65,106 @@ func TestSyncUsersDryRunDoesNotCreateKey(t *testing.T) {
 	}
 	if _, err := repository.NewAPIKeyRepository(database).GetLatestByUserID(ctx, user.ID); err == nil {
 		t.Fatal("expected no api key to be stored")
+	}
+}
+
+func TestSyncUsersDryRunPlansRuntimeGroupSelection(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	if _, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	results, err := NewUserSyncer(database, nil, 0).SyncUsers(ctx, UserSyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("sync users dry run: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "create" || results[0].GroupID != 0 {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if results[0].Message == "" || !strings.Contains(results[0].Message, "真实运行时选择") {
+		t.Fatalf("expected runtime group selection message, got %+v", results[0])
+	}
+}
+
+func TestSyncUsersDryRunRuntimeGroupPlanOverridesConfiguredDefault(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	if _, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	results, err := NewUserSyncer(database, nil, 51).
+		WithRuntimeGroupSelectionPlan().
+		SyncUsers(ctx, UserSyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("sync users dry run: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "create" || results[0].GroupID != 0 {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if !strings.Contains(results[0].Message, "真实运行时选择") {
+		t.Fatalf("expected runtime group message, got %+v", results[0])
+	}
+}
+
+func TestSyncUsersDryRunRuntimeGroupPlanForExistingKey(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	results, err := NewUserSyncer(database, nil, 51).
+		WithRuntimeGroupSelectionPlan().
+		SyncUsers(ctx, UserSyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("sync users dry run: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "sync" || results[0].GroupID != 0 {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if !strings.Contains(results[0].Message, "真实运行时") {
+		t.Fatalf("expected runtime group message, got %+v", results[0])
+	}
+}
+
+func TestSyncUsersDoesNotResolveDefaultGroupWhenInactiveUserNeedsNoKey(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	if _, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{
+		EmployeeNo: "E12345",
+		Name:       "Alice",
+		Status:     repository.UserStatusInactive,
+	}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	called := false
+	results, err := NewUserSyncer(database, &fakeUserKeyService{}, 0).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			called = true
+			return 0, nil
+		}).
+		SyncUsers(ctx, UserSyncOptions{EmployeeNo: "E12345"})
+	if err != nil {
+		t.Fatalf("sync inactive user: %v", err)
+	}
+	if called {
+		t.Fatal("default group resolver should not be called")
+	}
+	if len(results) != 1 || results[0].Action != "noop" {
+		t.Fatalf("unexpected results: %+v", results)
 	}
 }
 

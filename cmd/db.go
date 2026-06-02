@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -97,10 +98,11 @@ func runDBImportConfigKeys(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("加载配置失败: %w", err)
 	}
 
-	database, err := openLocalDatabaseForImport(context.Background(), dbImportConfigKeysDryRun)
+	database, cleanup, err := openLocalDatabaseForImport(context.Background(), dbImportConfigKeysDryRun)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	if database != nil {
 		defer database.Close()
 	}
@@ -127,10 +129,11 @@ func runDBImportRemoteKeys(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("获取远程 API Key 失败: %w", err)
 	}
 
-	database, err := openLocalDatabaseForImport(context.Background(), dbImportRemoteKeysDryRun)
+	database, cleanup, err := openLocalDatabaseForImport(context.Background(), dbImportRemoteKeysDryRun)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	if database != nil {
 		defer database.Close()
 	}
@@ -145,21 +148,54 @@ func runDBImportRemoteKeys(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func openLocalDatabaseForImport(ctx context.Context, dryRun bool) (*sql.DB, error) {
+func openLocalDatabaseForImport(ctx context.Context, dryRun bool) (*sql.DB, func(), error) {
 	if !dryRun {
-		return openLocalDatabase(ctx)
+		database, err := openLocalDatabase(ctx)
+		return database, func() {}, err
 	}
+	return openDryRunDatabaseCopy(ctx)
+}
+
+func openDryRunDatabaseCopy(ctx context.Context) (*sql.DB, func(), error) {
 	path, err := resolveDatabasePath()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, func() {}, nil
 		}
-		return nil, fmt.Errorf("检查数据库失败: %w", err)
+		return nil, nil, fmt.Errorf("检查数据库失败: %w", err)
 	}
-	return codesomedb.OpenReadOnly(path)
+
+	tempDir, err := os.MkdirTemp("", "codesome-import-dry-run-*")
+	if err != nil {
+		return nil, nil, fmt.Errorf("创建 dry-run 临时目录失败: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tempDir) }
+	tempPath := filepath.Join(tempDir, filepath.Base(path))
+	if err := copyFile(path, tempPath); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := copyOptionalFile(path+suffix, tempPath+suffix); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+	}
+
+	database, err := codesomedb.Open(tempPath)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	if err := codesomedb.Migrate(ctx, database); err != nil {
+		database.Close()
+		cleanup()
+		return nil, nil, err
+	}
+	return database, cleanup, nil
 }
 
 func printDBImportConfigKeysResults(results []importsync.ImportConfigKeysResult) {

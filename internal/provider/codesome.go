@@ -871,6 +871,22 @@ func SwitchCodesomeKeyGroup(cfg *config.Config, keyID int, groupID int) (*Codeso
 	return result, nil
 }
 
+func BestCodesomeGroupID(cfg *config.Config) (int, error) {
+	if cfg == nil || cfg.GetCodesomeConfig() == nil {
+		return 0, fmt.Errorf("未找到 Codesome 配置")
+	}
+	client := newCodesomeClient(cfg)
+	subs, err := client.fetchSubscriptions(true)
+	if err != nil {
+		return 0, fmt.Errorf("获取订阅信息失败: %w", err)
+	}
+	target, _, ok := bestSubscription(subs)
+	if !ok || target.Group == nil {
+		return 0, fmt.Errorf("没有可用的 active subscription group")
+	}
+	return target.Group.ID, nil
+}
+
 func SwitchCodesomeKeyGroupOnExhausted(cfg *config.Config, keyID int, minRemainingUSD float64) (*CodesomeGroupSwitchResult, error) {
 	client := newCodesomeClient(cfg)
 	key, err := client.fetchApiKeyByID(keyID)

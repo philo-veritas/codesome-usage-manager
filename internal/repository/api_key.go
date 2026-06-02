@@ -30,6 +30,7 @@ type APIKeyExportRow struct {
 	EmployeeNo    string
 	UserName      string
 	TeamCode      *string
+	FeishuOpenID  string
 	KeyName       string
 	CodesomeKeyID int
 	RawKey        *string
@@ -193,6 +194,7 @@ SELECT
   users.employee_no,
   users.name,
   teams.code,
+  users.feishu_open_id,
   api_keys.name,
   api_keys.codesome_key_id,
   api_keys.raw_key,
@@ -212,11 +214,13 @@ ORDER BY users.employee_no, api_keys.id
 	for rows.Next() {
 		var row APIKeyExportRow
 		var teamCode sql.NullString
+		var feishuOpenID sql.NullString
 		var rawKey sql.NullString
 		if err := rows.Scan(
 			&row.EmployeeNo,
 			&row.UserName,
 			&teamCode,
+			&feishuOpenID,
 			&row.KeyName,
 			&row.CodesomeKeyID,
 			&rawKey,
@@ -226,6 +230,9 @@ ORDER BY users.employee_no, api_keys.id
 		}
 		if teamCode.Valid {
 			row.TeamCode = &teamCode.String
+		}
+		if feishuOpenID.Valid {
+			row.FeishuOpenID = feishuOpenID.String
 		}
 		if rawKey.Valid {
 			row.RawKey = &rawKey.String

@@ -225,6 +225,36 @@ func TestUserRepositoryRejectsDuplicateEmployeeNo(t *testing.T) {
 	}
 }
 
+func TestUserRepositoryRejectsDuplicateFeishuOpenID(t *testing.T) {
+	_, userRepo := newTestUserRepositories(t)
+	ctx := context.Background()
+
+	if _, err := userRepo.Create(ctx, CreateUserParams{
+		EmployeeNo:   "E12345",
+		Name:         "Alice",
+		FeishuOpenID: "ou_alice",
+	}); err != nil {
+		t.Fatalf("create first user: %v", err)
+	}
+	if _, err := userRepo.Create(ctx, CreateUserParams{
+		EmployeeNo:   "E99999",
+		Name:         "Bob",
+		FeishuOpenID: "ou_alice",
+	}); err == nil {
+		t.Fatal("expected duplicate feishu open id create to fail")
+	}
+	if _, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E99999", Name: "Bob"}); err != nil {
+		t.Fatalf("create user without open id: %v", err)
+	}
+	duplicateOpenID := "ou_alice"
+	if _, err := userRepo.Update(ctx, "E99999", UpdateUserParams{FeishuOpenID: &duplicateOpenID}); err == nil {
+		t.Fatal("expected duplicate feishu open id update to fail")
+	}
+	if _, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E77777", Name: "Carol"}); err != nil {
+		t.Fatalf("create second user without open id: %v", err)
+	}
+}
+
 func newTestUserRepositories(t *testing.T) (*TeamRepository, *UserRepository) {
 	t.Helper()
 

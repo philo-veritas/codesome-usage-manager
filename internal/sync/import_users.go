@@ -24,6 +24,7 @@ type ImportUsersResult struct {
 	TeamCode        string
 	Status          string
 	CodesomeGroupID *int
+	FeishuOpenID    string
 }
 
 type UserCSVImporter struct {
@@ -38,9 +39,11 @@ type userCSVRow struct {
 	teamCode        string
 	status          string
 	codesomeGroupID *int
+	feishuOpenID    string
 	groupColumn     bool
 	teamColumn      bool
 	statusSet       bool
+	openIDColumn    bool
 }
 
 func NewUserCSVImporter(database *sql.DB) *UserCSVImporter {
@@ -58,6 +61,10 @@ func (i *UserCSVImporter) ImportCSV(ctx context.Context, reader io.Reader, optio
 	if err != nil {
 		return nil, err
 	}
+	return i.ImportRows(ctx, rows, options)
+}
+
+func (i *UserCSVImporter) ImportRows(ctx context.Context, rows []userCSVRow, options ImportUsersOptions) ([]ImportUsersResult, error) {
 	if i.users == nil {
 		return nil, fmt.Errorf("导入 user 需要数据库连接")
 	}
@@ -100,6 +107,7 @@ func (i *UserCSVImporter) importOne(ctx context.Context, row userCSVRow, options
 		TeamCode:        row.teamCode,
 		Status:          row.status,
 		CodesomeGroupID: row.codesomeGroupID,
+		FeishuOpenID:    row.feishuOpenID,
 	}
 
 	if i.users == nil {
@@ -157,6 +165,7 @@ func createUserParamsFromCSV(row userCSVRow) repository.CreateUserParams {
 		TeamCode:        row.teamCode,
 		Status:          row.status,
 		CodesomeGroupID: row.codesomeGroupID,
+		FeishuOpenID:    row.feishuOpenID,
 	}
 }
 
@@ -176,6 +185,9 @@ func updateUserParamsFromCSV(row userCSVRow) repository.UpdateUserParams {
 		} else {
 			params.ClearGroupID = true
 		}
+	}
+	if row.openIDColumn {
+		params.FeishuOpenID = &row.feishuOpenID
 	}
 	return params
 }
@@ -235,13 +247,15 @@ func userCSVColumns(header []string) map[string]int {
 
 func parseUserCSVRecord(rowNumber int, record []string, columns map[string]int) (userCSVRow, error) {
 	row := userCSVRow{
-		row:         rowNumber,
-		employeeNo:  csvCell(record, columns, "employee_no"),
-		name:        csvCell(record, columns, "name"),
-		teamCode:    csvCell(record, columns, "team"),
-		status:      strings.ToLower(csvCell(record, columns, "status")),
-		groupColumn: csvColumnExists(columns, "group_id"),
-		teamColumn:  csvColumnExists(columns, "team"),
+		row:          rowNumber,
+		employeeNo:   csvCell(record, columns, "employee_no"),
+		name:         csvCell(record, columns, "name"),
+		teamCode:     csvCell(record, columns, "team"),
+		status:       strings.ToLower(csvCell(record, columns, "status")),
+		feishuOpenID: csvCell(record, columns, "feishu_open_id"),
+		groupColumn:  csvColumnExists(columns, "group_id"),
+		teamColumn:   csvColumnExists(columns, "team"),
+		openIDColumn: csvColumnExists(columns, "feishu_open_id"),
 	}
 	if row.employeeNo == "" {
 		return userCSVRow{}, fmt.Errorf("CSV 第 %d 行 employee_no 不能为空", rowNumber)
@@ -299,6 +313,9 @@ func userMatchesCSV(user *repository.User, row userCSVRow) bool {
 		return false
 	}
 	if row.groupColumn && intPtrValue(user.CodesomeGroupID) != intPtrValue(row.codesomeGroupID) {
+		return false
+	}
+	if row.openIDColumn && user.FeishuOpenID != row.feishuOpenID {
 		return false
 	}
 	return true

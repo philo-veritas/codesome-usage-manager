@@ -20,6 +20,7 @@ type User struct {
 	TeamCode        *string
 	Status          string
 	CodesomeGroupID *int
+	FeishuOpenID    string
 	CreatedAt       string
 	UpdatedAt       string
 	DeletedAt       *string
@@ -44,6 +45,7 @@ type CreateUserParams struct {
 	TeamCode        string
 	Status          string
 	CodesomeGroupID *int
+	FeishuOpenID    string
 }
 
 func (r *UserRepository) Create(ctx context.Context, params CreateUserParams) (*User, error) {
@@ -55,11 +57,11 @@ func (r *UserRepository) Create(ctx context.Context, params CreateUserParams) (*
 	now := nowString()
 	res, err := r.execContext(ctx, `
 INSERT INTO users (
-  employee_no, name, team_id, status, codesome_group_id, created_at, updated_at
+  employee_no, name, team_id, status, codesome_group_id, feishu_open_id, created_at, updated_at
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?
 )
-`, params.EmployeeNo, params.Name, nullableInt64(teamID), status, nullableInt(params.CodesomeGroupID), now, now)
+`, params.EmployeeNo, params.Name, nullableInt64(teamID), status, nullableInt(params.CodesomeGroupID), nullableString(params.FeishuOpenID), now, now)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -110,6 +112,7 @@ type UpdateUserParams struct {
 	Status          *string
 	CodesomeGroupID *int
 	ClearGroupID    bool
+	FeishuOpenID    *string
 }
 
 func (r *UserRepository) ValidateCreate(ctx context.Context, params CreateUserParams) error {
@@ -118,50 +121,50 @@ func (r *UserRepository) ValidateCreate(ctx context.Context, params CreateUserPa
 }
 
 func (r *UserRepository) Update(ctx context.Context, employeeNo string, params UpdateUserParams) (*User, error) {
-	name, status, teamID, codesomeGroupID, err := r.prepareUpdate(ctx, employeeNo, params)
+	name, status, teamID, codesomeGroupID, feishuOpenID, err := r.prepareUpdate(ctx, employeeNo, params)
 	if err != nil {
 		return nil, err
 	}
 
 	if _, err := r.execContext(ctx, `
 UPDATE users
-SET name = ?, team_id = ?, status = ?, codesome_group_id = ?, updated_at = ?
+SET name = ?, team_id = ?, status = ?, codesome_group_id = ?, feishu_open_id = ?, updated_at = ?
 WHERE employee_no = ?
-`, name, nullableInt64(teamID), status, nullableInt(codesomeGroupID), nowString(), employeeNo); err != nil {
+`, name, nullableInt64(teamID), status, nullableInt(codesomeGroupID), nullableString(feishuOpenID), nowString(), employeeNo); err != nil {
 		return nil, fmt.Errorf("update user: %w", err)
 	}
 	return r.GetByEmployeeNo(ctx, employeeNo)
 }
 
-func (r *UserRepository) prepareUpdate(ctx context.Context, employeeNo string, params UpdateUserParams) (string, string, *int64, *int, error) {
+func (r *UserRepository) prepareUpdate(ctx context.Context, employeeNo string, params UpdateUserParams) (string, string, *int64, *int, string, error) {
 	if employeeNo == "" {
-		return "", "", nil, nil, fmt.Errorf("employee no is required")
+		return "", "", nil, nil, "", fmt.Errorf("employee no is required")
 	}
-	if params.Name == nil && params.TeamCode == nil && params.Status == nil && params.CodesomeGroupID == nil && !params.ClearGroupID {
-		return "", "", nil, nil, fmt.Errorf("no user fields to update")
+	if params.Name == nil && params.TeamCode == nil && params.Status == nil && params.CodesomeGroupID == nil && !params.ClearGroupID && params.FeishuOpenID == nil {
+		return "", "", nil, nil, "", fmt.Errorf("no user fields to update")
 	}
 	if params.Status != nil && !IsValidUserStatus(*params.Status) {
-		return "", "", nil, nil, fmt.Errorf("invalid user status: %s", *params.Status)
+		return "", "", nil, nil, "", fmt.Errorf("invalid user status: %s", *params.Status)
 	}
 	if params.Status != nil && *params.Status == UserStatusDeleted {
-		return "", "", nil, nil, fmt.Errorf("use delete to soft-delete user")
+		return "", "", nil, nil, "", fmt.Errorf("use delete to soft-delete user")
 	}
 	if params.CodesomeGroupID != nil && *params.CodesomeGroupID <= 0 {
-		return "", "", nil, nil, fmt.Errorf("codesome group id must be positive")
+		return "", "", nil, nil, "", fmt.Errorf("codesome group id must be positive")
 	}
 
 	user, err := r.GetByEmployeeNo(ctx, employeeNo)
 	if err != nil {
-		return "", "", nil, nil, err
+		return "", "", nil, nil, "", err
 	}
 	if user.Status == UserStatusDeleted {
-		return "", "", nil, nil, fmt.Errorf("deleted user cannot be updated")
+		return "", "", nil, nil, "", fmt.Errorf("deleted user cannot be updated")
 	}
 
 	name := user.Name
 	if params.Name != nil {
 		if *params.Name == "" {
-			return "", "", nil, nil, fmt.Errorf("user name is required")
+			return "", "", nil, nil, "", fmt.Errorf("user name is required")
 		}
 		name = *params.Name
 	}
@@ -175,12 +178,12 @@ func (r *UserRepository) prepareUpdate(ctx context.Context, employeeNo string, p
 	if params.TeamCode != nil {
 		resolvedTeamID, err := r.resolveTeamIDForStatus(ctx, *params.TeamCode, status)
 		if err != nil {
-			return "", "", nil, nil, err
+			return "", "", nil, nil, "", err
 		}
 		teamID = resolvedTeamID
 	} else if status == UserStatusActive && teamID != nil {
 		if err := r.ensureTeamActive(ctx, *teamID); err != nil {
-			return "", "", nil, nil, err
+			return "", "", nil, nil, "", err
 		}
 	}
 
@@ -191,11 +194,15 @@ func (r *UserRepository) prepareUpdate(ctx context.Context, employeeNo string, p
 	if params.CodesomeGroupID != nil {
 		codesomeGroupID = params.CodesomeGroupID
 	}
-	return name, status, teamID, codesomeGroupID, nil
+	feishuOpenID := user.FeishuOpenID
+	if params.FeishuOpenID != nil {
+		feishuOpenID = *params.FeishuOpenID
+	}
+	return name, status, teamID, codesomeGroupID, feishuOpenID, nil
 }
 
 func (r *UserRepository) ValidateUpdate(ctx context.Context, employeeNo string, params UpdateUserParams) error {
-	_, _, _, _, err := r.prepareUpdate(ctx, employeeNo, params)
+	_, _, _, _, _, err := r.prepareUpdate(ctx, employeeNo, params)
 	return err
 }
 
@@ -310,6 +317,7 @@ SELECT
   teams.code,
   users.status,
   users.codesome_group_id,
+  users.feishu_open_id,
   users.created_at,
   users.updated_at,
   users.deleted_at
@@ -322,6 +330,7 @@ func scanUser(row *sql.Row) (*User, error) {
 	var teamID sql.NullInt64
 	var teamCode sql.NullString
 	var codesomeGroupID sql.NullInt64
+	var feishuOpenID sql.NullString
 	var deletedAt sql.NullString
 	if err := row.Scan(
 		&user.ID,
@@ -331,6 +340,7 @@ func scanUser(row *sql.Row) (*User, error) {
 		&teamCode,
 		&user.Status,
 		&codesomeGroupID,
+		&feishuOpenID,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&deletedAt,
@@ -340,7 +350,7 @@ func scanUser(row *sql.Row) (*User, error) {
 		}
 		return nil, fmt.Errorf("scan user: %w", err)
 	}
-	assignNullableUserFields(&user, teamID, teamCode, codesomeGroupID, deletedAt)
+	assignNullableUserFields(&user, teamID, teamCode, codesomeGroupID, feishuOpenID, deletedAt)
 	return &user, nil
 }
 
@@ -353,6 +363,7 @@ func scanUserRows(row userScanner) (*User, error) {
 	var teamID sql.NullInt64
 	var teamCode sql.NullString
 	var codesomeGroupID sql.NullInt64
+	var feishuOpenID sql.NullString
 	var deletedAt sql.NullString
 	if err := row.Scan(
 		&user.ID,
@@ -362,17 +373,18 @@ func scanUserRows(row userScanner) (*User, error) {
 		&teamCode,
 		&user.Status,
 		&codesomeGroupID,
+		&feishuOpenID,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&deletedAt,
 	); err != nil {
 		return nil, fmt.Errorf("scan user: %w", err)
 	}
-	assignNullableUserFields(&user, teamID, teamCode, codesomeGroupID, deletedAt)
+	assignNullableUserFields(&user, teamID, teamCode, codesomeGroupID, feishuOpenID, deletedAt)
 	return &user, nil
 }
 
-func assignNullableUserFields(user *User, teamID sql.NullInt64, teamCode sql.NullString, codesomeGroupID sql.NullInt64, deletedAt sql.NullString) {
+func assignNullableUserFields(user *User, teamID sql.NullInt64, teamCode sql.NullString, codesomeGroupID sql.NullInt64, feishuOpenID sql.NullString, deletedAt sql.NullString) {
 	if teamID.Valid {
 		user.TeamID = &teamID.Int64
 	}
@@ -382,6 +394,9 @@ func assignNullableUserFields(user *User, teamID sql.NullInt64, teamCode sql.Nul
 	if codesomeGroupID.Valid {
 		groupID := int(codesomeGroupID.Int64)
 		user.CodesomeGroupID = &groupID
+	}
+	if feishuOpenID.Valid {
+		user.FeishuOpenID = feishuOpenID.String
 	}
 	if deletedAt.Valid {
 		user.DeletedAt = &deletedAt.String

@@ -15,11 +15,16 @@ type UserKeyService interface {
 	UpdateKey(ctx context.Context, keyID int, update provider.CodesomeKeyUpdate) (*provider.CodesomeApiKey, error)
 }
 
+type DefaultGroupIDResolver func(ctx context.Context) (int, error)
+
 type UserSyncer struct {
-	users          *repository.UserRepository
-	keys           *repository.APIKeyRepository
-	service        UserKeyService
-	defaultGroupID int
+	users                  *repository.UserRepository
+	keys                   *repository.APIKeyRepository
+	service                UserKeyService
+	defaultGroupID         int
+	defaultGroupIDResolver DefaultGroupIDResolver
+	resolvedDefaultGroupID *int
+	planRuntimeGroup       bool
 }
 
 type UserSyncOptions struct {
@@ -44,6 +49,16 @@ func NewUserSyncer(database *sql.DB, service UserKeyService, defaultGroupID int)
 		service:        service,
 		defaultGroupID: defaultGroupID,
 	}
+}
+
+func (s *UserSyncer) WithDefaultGroupIDResolver(resolver DefaultGroupIDResolver) *UserSyncer {
+	s.defaultGroupIDResolver = resolver
+	return s
+}
+
+func (s *UserSyncer) WithRuntimeGroupSelectionPlan() *UserSyncer {
+	s.planRuntimeGroup = true
+	return s
 }
 
 func (s *UserSyncer) SyncUsers(ctx context.Context, options UserSyncOptions) ([]UserSyncResult, error) {
@@ -97,7 +112,14 @@ func (s *UserSyncer) syncUserWithoutKey(ctx context.Context, user repository.Use
 		return result, nil
 	}
 
-	groupID, err := s.desiredGroupID(user)
+	if dryRun && (s.usesRuntimeGroupSelection(user) || s.canPlanMissingDefaultGroup(user)) {
+		name := desiredKeyName(user)
+		result.Action = "create"
+		result.Message = fmt.Sprintf("创建 Codesome key: name=%s group_id=<真实运行时选择可用余额最多的 group>", name)
+		return result, nil
+	}
+
+	groupID, err := s.desiredGroupID(ctx, user)
 	if err != nil {
 		return result, err
 	}
@@ -152,9 +174,17 @@ func (s *UserSyncer) syncUserWithoutKey(ctx context.Context, user repository.Use
 func (s *UserSyncer) syncUserWithKey(ctx context.Context, user repository.User, key *repository.APIKey, dryRun bool, result UserSyncResult) (UserSyncResult, error) {
 	desiredStatus := desiredKeyStatus(user)
 	desiredName := desiredKeyName(user)
+	if dryRun && user.Status == repository.UserStatusActive && s.usesRuntimeGroupSelection(user) {
+		return s.planUserWithRuntimeGroupSelection(key, desiredName, desiredStatus, result)
+	}
+
 	desiredGroupID := key.GroupID
 	if user.Status == repository.UserStatusActive {
-		desiredGroupID = s.desiredExistingGroupID(user, key)
+		resolvedGroupID, err := s.desiredExistingGroupID(ctx, user, key)
+		if err != nil {
+			return result, err
+		}
+		desiredGroupID = resolvedGroupID
 	}
 
 	localUpdate := provider.CodesomeKeyUpdate{}
@@ -213,24 +243,80 @@ func (s *UserSyncer) syncUserWithKey(ctx context.Context, user repository.User, 
 	return result, nil
 }
 
-func (s *UserSyncer) desiredExistingGroupID(user repository.User, key *repository.APIKey) int {
-	if user.CodesomeGroupID != nil {
-		return *user.CodesomeGroupID
+func (s *UserSyncer) planUserWithRuntimeGroupSelection(
+	key *repository.APIKey,
+	desiredName string,
+	desiredStatus string,
+	result UserSyncResult,
+) (UserSyncResult, error) {
+	update := provider.CodesomeKeyUpdate{}
+	if key.Status != desiredStatus {
+		update.Status = &desiredStatus
 	}
-	if s.defaultGroupID > 0 {
-		return s.defaultGroupID
+	if key.Name != desiredName {
+		update.Name = &desiredName
 	}
-	return key.GroupID
+
+	result.CodesomeKeyID = key.CodesomeKeyID
+	result.GroupID = 0
+	if update.Status == nil && update.Name == nil {
+		result.Action = "sync"
+		result.Message = "真实运行时按可用余额最多的 group 评估 Codesome key"
+		return result, nil
+	}
+	result.Action = "update"
+	result.Message = describeKeyUpdate(key, update) + " group_id=<真实运行时选择可用余额最多的 group>"
+	return result, nil
 }
 
-func (s *UserSyncer) desiredGroupID(user repository.User) (int, error) {
+func (s *UserSyncer) desiredExistingGroupID(ctx context.Context, user repository.User, key *repository.APIKey) (int, error) {
 	if user.CodesomeGroupID != nil {
 		return *user.CodesomeGroupID, nil
 	}
-	if s.defaultGroupID <= 0 {
+	groupID, err := s.resolveDefaultGroupID(ctx)
+	if err == nil && groupID > 0 {
+		return groupID, nil
+	}
+	return key.GroupID, nil
+}
+
+func (s *UserSyncer) desiredGroupID(ctx context.Context, user repository.User) (int, error) {
+	if user.CodesomeGroupID != nil {
+		return *user.CodesomeGroupID, nil
+	}
+	groupID, err := s.resolveDefaultGroupID(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if groupID <= 0 {
 		return 0, fmt.Errorf("user %s 缺少 Codesome group：请配置 codesome.default_group_id 或 user --group-id", user.EmployeeNo)
 	}
+	return groupID, nil
+}
+
+func (s *UserSyncer) resolveDefaultGroupID(ctx context.Context) (int, error) {
+	if s.resolvedDefaultGroupID != nil {
+		return *s.resolvedDefaultGroupID, nil
+	}
+	if s.defaultGroupIDResolver != nil {
+		groupID, err := s.defaultGroupIDResolver(ctx)
+		if err == nil && groupID > 0 {
+			s.resolvedDefaultGroupID = &groupID
+			return groupID, nil
+		}
+		if s.defaultGroupID <= 0 {
+			return 0, err
+		}
+	}
 	return s.defaultGroupID, nil
+}
+
+func (s *UserSyncer) usesRuntimeGroupSelection(user repository.User) bool {
+	return user.CodesomeGroupID == nil && s.planRuntimeGroup
+}
+
+func (s *UserSyncer) canPlanMissingDefaultGroup(user repository.User) bool {
+	return user.CodesomeGroupID == nil && s.defaultGroupID <= 0 && s.defaultGroupIDResolver == nil
 }
 
 func desiredKeyName(user repository.User) string {

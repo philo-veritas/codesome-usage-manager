@@ -75,3 +75,30 @@ func TestDatabasePath(t *testing.T) {
 		t.Fatalf("expected custom path, got %q", got)
 	}
 }
+
+func TestGetFeishuConfigReadsBitableLocation(t *testing.T) {
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(`
+feishu:
+  base_url: "https://open.feishu.cn/open-apis/"
+  app_id: "cli_test"
+  app_secret: "secret"
+  bitable:
+    app_token: "app_token"
+    users:
+      table_id: "tbl1"
+`), &cfg); err != nil {
+		t.Fatalf("failed to parse feishu config: %v", err)
+	}
+
+	feishu := cfg.GetFeishuConfig()
+	if feishu == nil {
+		t.Fatal("expected Feishu config")
+	}
+	if feishu.BaseURL != "https://open.feishu.cn/open-apis" {
+		t.Fatalf("unexpected base URL: %s", feishu.BaseURL)
+	}
+	if feishu.Bitable.AppToken != "app_token" || feishu.Bitable.Users.TableID != "tbl1" {
+		t.Fatalf("unexpected bitable location: %+v", feishu.Bitable)
+	}
+}

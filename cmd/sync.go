@@ -93,7 +93,16 @@ func runSyncUsers(cmd *cobra.Command, args []string) error {
 		defaultGroupID = codesome.DefaultGroupID
 	}
 
-	results, err := usersync.NewUserSyncer(database, service, defaultGroupID).SyncUsers(ctx, usersync.UserSyncOptions{
+	syncer := usersync.NewUserSyncer(database, service, defaultGroupID)
+	if syncUsersDryRun && cfg.GetCodesomeConfig() != nil {
+		syncer.WithRuntimeGroupSelectionPlan()
+	} else if !syncUsersDryRun && cfg.GetCodesomeConfig() != nil {
+		syncer.WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			return provider.BestCodesomeGroupID(cfg)
+		})
+	}
+
+	results, err := syncer.SyncUsers(ctx, usersync.UserSyncOptions{
 		DryRun:     syncUsersDryRun,
 		EmployeeNo: syncUsersEmployeeNo,
 	})

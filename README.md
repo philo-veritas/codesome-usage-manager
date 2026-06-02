@@ -32,7 +32,9 @@ Common first commands:
 ./codesome team add --code platform --name "Platform"
 ./codesome user import --file users.csv --dry-run
 ./codesome user import --file users.csv
+./codesome user import-feishu --dry-run
 ./codesome sync users --dry-run
+./codesome feishu send-keys --team platform --dry-run
 ./codesome sync usage --yesterday
 ./codesome report monthly --month 2026-05
 ```
@@ -59,8 +61,9 @@ go build ./...
 | --- | --- |
 | Database | `db init`, `db migrate`, `db import-remote-keys`, `db import-config-keys` |
 | Teams | `team add`, `team update`, `team list` |
-| Users | `user add`, `user import`, `user update`, `user delete`, `user list` |
+| Users | `user add`, `user import`, `user import-feishu`, `user update`, `user delete`, `user list` |
 | API keys | `sync users`, `key export`, `create-key`, `update-key` |
+| Feishu | `feishu bitable explore`, `feishu send-keys` |
 | Usage | `sync usage`, `usage-stats`, `daily-usage`, default `codesome` usage view |
 | Reports | `report monthly` |
 | Service | `serve`, `switch-on-exhausted`, `auto-switch` |
@@ -95,23 +98,49 @@ Manage local users:
 
 ```bash
 codesome user add --employee-no E12345 --name "Alice" --team platform --group-id 51
+codesome user add --employee-no E12346 --name "Bob" --feishu-open-id ou_xxx
 codesome user import --file users.csv --dry-run
 codesome user import --file users.csv
 codesome user update --employee-no E12345 --status inactive
+codesome user update --employee-no E12345 --feishu-open-id ou_xxx
 codesome user update --employee-no E12345 --team infra
 codesome user update --employee-no E12345 --clear-group-id
 codesome user delete --employee-no E12345
 codesome user list
 ```
 
-CSV import expects `employee_no` and `name`; `team`, `group_id`, and `status` are optional. When `team` is set, it must match an existing team code. Save Excel sheets as CSV before importing:
+CSV import expects `employee_no` and `name`; `team`, `group_id`, `status`, and `feishu_open_id` are optional. When `team` is set, it must match an existing team code. Save Excel sheets as CSV before importing:
 
 ```csv
-employee_no,name,team,group_id,status
-E12345,Alice,platform,51,active
-E12346,Bob,infra,60,active
-E12347,Carol,platform,,inactive
+employee_no,name,team,group_id,status,feishu_open_id
+E12345,Alice,platform,51,active,ou_alice
+E12346,Bob,infra,60,active,ou_bob
+E12347,Carol,platform,,inactive,
 ```
+
+Import users from a Feishu Bitable:
+
+```bash
+codesome feishu bitable explore
+codesome user import-feishu --dry-run
+codesome user import-feishu
+```
+
+Feishu Bitable user import uses a fixed table shape in code, so `config.yaml` only needs the Feishu app and Bitable location:
+
+```yaml
+feishu:
+  app_id: "cli_xxx"
+  app_secret: "your-feishu-app-secret"
+  bitable:
+    app_token: "bascn_xxx"
+    users:
+      table_id: "tblxxx"
+```
+
+The importer expects these Bitable fields: `人员`, `工号`, `团队`, and `状态`. `name` comes from `人员[0].name`, `open_id` comes from `人员[0].id`, `employee_no` comes from `工号.value[0].text`, `team` comes from `团队[0].text`, and `status` maps `生效` to `active` and `禁用` to `inactive`. The Bitable API is queried with `user_id_type=open_id`.
+
+When a Feishu team does not exist locally, `user import-feishu` creates it automatically with `teams.code` and `teams.name` both set to the Feishu team text, for example `数字化中心`. Dry-run uses the same validation path but rolls back those temporary team creations.
 
 Sync local users to Codesome API keys:
 
@@ -120,6 +149,18 @@ codesome sync users --dry-run
 codesome sync users
 codesome sync users --employee-no E12345
 ```
+
+When `sync users` creates or updates a Codesome key for a user without a manual group override, it selects the active subscription group with the most remaining daily balance, matching the auto-switch selection rule. `codesome.default_group_id` remains a fallback when that live selection is unavailable.
+
+Send locally stored raw API keys to Feishu users:
+
+```bash
+codesome feishu send-keys --employee-no E12345 --dry-run
+codesome feishu send-keys --team platform
+codesome feishu send-keys --all
+```
+
+This sends only API keys whose `raw_key` is still stored locally. Keys imported from remote lists usually do not have `raw_key`, because Codesome only returns the secret when a key is created.
 
 Export local API keys:
 
@@ -292,6 +333,14 @@ codesome:
     email: "your-email@example.com"
     password: "your-password"
   default_group_id: 51
+
+feishu:
+  app_id: "cli_xxx"
+  app_secret: "your-feishu-app-secret"
+  bitable:
+    app_token: "bascn_xxx"
+    users:
+      table_id: "tblxxx"
 
 database:
   path: "./codesome-manager.db"

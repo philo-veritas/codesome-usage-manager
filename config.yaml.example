@@ -14,6 +14,22 @@ codesome:
   #     name: "main"
   #     key: "main"
 
+feishu:
+  # Used by both Bitable import and direct-message delivery.
+  app_id: "cli_xxx"
+  app_secret: "your-feishu-app-secret"
+  bitable:
+    app_token: "bascn_xxx"
+    users:
+      table_id: "tblxxx"
+      # Optional: limit import/explore to a specific Bitable view.
+      # view_id: "vewxxx"
+      # The user table parser expects these Bitable fields:
+      # 人员: person field; uses [0].name and [0].id
+      # 工号: rich text/number-like field; uses value[0].text
+      # 团队: text field; uses [0].text
+      # 状态: option/text field; maps 生效->active, 禁用->inactive
+
 database:
   # Keep this path aligned with Docker volume mounts if you deploy with compose.
   path: "./codesome-manager.db"
