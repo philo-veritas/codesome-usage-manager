@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -116,7 +117,7 @@ func runFeishuSendKeys(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("未找到可发送的 API Key")
 	}
 
-	var client *provider.FeishuClient
+	var client feishuMessageClient
 	if !feishuSendKeysDryRun {
 		_, client, err = loadFeishuClient()
 		if err != nil {
@@ -124,17 +125,9 @@ func runFeishuSendKeys(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	results := make([]feishuSendKeyResult, 0, len(rows))
-	for _, row := range rows {
-		result := sendFeishuKey(ctx, client, row, feishuSendKeysDryRun)
-		results = append(results, result)
-		if result.Error != "" {
-			printFeishuSendKeyResults(results)
-			return fmt.Errorf("发送飞书消息失败: employee_no=%s error=%s", result.EmployeeNo, result.Error)
-		}
-	}
+	results, err := sendFeishuKeys(ctx, client, rows, feishuSendKeysDryRun)
 	printFeishuSendKeyResults(results)
-	return nil
+	return err
 }
 
 func loadFeishuClient() (*config.Config, *provider.FeishuClient, error) {
@@ -180,7 +173,35 @@ type feishuSendKeyResult struct {
 	Error      string
 }
 
-func sendFeishuKey(ctx context.Context, client *provider.FeishuClient, row repository.APIKeyExportRow, dryRun bool) feishuSendKeyResult {
+type feishuMessageClient interface {
+	SendTextMessage(ctx context.Context, openID string, text string) (*provider.FeishuMessageResult, error)
+}
+
+func sendFeishuKeys(ctx context.Context, client feishuMessageClient, rows []repository.APIKeyExportRow, dryRun bool) ([]feishuSendKeyResult, error) {
+	results := make([]feishuSendKeyResult, 0, len(rows))
+	var failed []feishuSendKeyResult
+	for _, row := range rows {
+		result := sendFeishuKey(ctx, client, row, dryRun)
+		results = append(results, result)
+		if result.Error != "" {
+			failed = append(failed, result)
+		}
+	}
+	if len(failed) == 0 {
+		return results, nil
+	}
+	return results, fmt.Errorf("发送飞书消息失败: %d/%d 失败\n%s", len(failed), len(results), formatFeishuSendFailures(failed))
+}
+
+func formatFeishuSendFailures(failed []feishuSendKeyResult) string {
+	lines := make([]string, 0, len(failed))
+	for _, result := range failed {
+		lines = append(lines, fmt.Sprintf("employee_no=%s name=%s error=%s", result.EmployeeNo, result.Name, result.Error))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func sendFeishuKey(ctx context.Context, client feishuMessageClient, row repository.APIKeyExportRow, dryRun bool) feishuSendKeyResult {
 	result := feishuSendKeyResult{
 		EmployeeNo: row.EmployeeNo,
 		Name:       row.UserName,
@@ -201,6 +222,11 @@ func sendFeishuKey(ctx context.Context, client *provider.FeishuClient, row repos
 	if dryRun {
 		result.Action = "send"
 		result.Message = "dry-run"
+		return result
+	}
+	if client == nil {
+		result.Action = "error"
+		result.Error = "feishu client is nil"
 		return result
 	}
 	sent, err := client.SendTextMessage(ctx, row.FeishuOpenID, buildFeishuKeyMessage(row, rawKey))
