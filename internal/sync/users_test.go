@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -44,6 +45,85 @@ func TestSyncUsersCreatesMissingKeyForActiveUser(t *testing.T) {
 	}
 	if key.CodesomeKeyID != 6732 || key.RawKey == nil || *key.RawKey != "sk-test" {
 		t.Fatalf("unexpected stored api key: %+v", key)
+	}
+}
+
+func TestSyncUsersCreatesMissingKeyWithRuntimeBestGroup(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	if _, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &fakeUserKeyService{
+		createResult: &provider.CodesomeApiKeyWithSecret{
+			CodesomeApiKey: provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 60, Status: "active"},
+			Key:            "sk-test",
+		},
+	}
+
+	results, err := NewUserSyncer(database, service, 51).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			return 60, nil
+		}).
+		SyncUsers(ctx, UserSyncOptions{})
+	if err != nil {
+		t.Fatalf("sync users: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "create" || results[0].GroupID != 60 {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if len(service.creates) != 1 || service.creates[0].groupID != 60 {
+		t.Fatalf("expected create to use runtime best group, got %+v", service.creates)
+	}
+}
+
+func TestSyncUsersCreateFallsBackToConfiguredDefaultGroup(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	if _, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &fakeUserKeyService{
+		createResult: &provider.CodesomeApiKeyWithSecret{
+			CodesomeApiKey: provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 51, Status: "active"},
+			Key:            "sk-test",
+		},
+	}
+
+	results, err := NewUserSyncer(database, service, 51).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			return 0, errors.New("subscription unavailable")
+		}).
+		SyncUsers(ctx, UserSyncOptions{})
+	if err != nil {
+		t.Fatalf("sync users: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "create" || results[0].GroupID != 51 {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if len(service.creates) != 1 || service.creates[0].groupID != 51 {
+		t.Fatalf("expected create to fall back to configured default group, got %+v", service.creates)
+	}
+}
+
+func TestSyncUsersCreateFailsWhenRuntimeBestGroupAndDefaultGroupUnavailable(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	if _, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	service := &fakeUserKeyService{}
+
+	_, err := NewUserSyncer(database, service, 0).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			return 0, errors.New("subscription unavailable")
+		}).
+		SyncUsers(ctx, UserSyncOptions{})
+	if err == nil {
+		t.Fatal("expected sync users to fail when runtime best group is unavailable")
+	}
+	if len(service.creates) != 0 {
+		t.Fatalf("expected no create calls, got %+v", service.creates)
 	}
 }
 

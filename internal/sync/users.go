@@ -291,13 +291,9 @@ func (s *UserSyncer) desiredGroupID(ctx context.Context, user repository.User) (
 }
 
 func (s *UserSyncer) resolveDefaultGroupID(ctx context.Context) (int, error) {
-	if s.resolvedDefaultGroupID != nil {
-		return *s.resolvedDefaultGroupID, nil
-	}
 	if s.defaultGroupIDResolver != nil {
-		groupID, err := s.defaultGroupIDResolver(ctx)
-		if err == nil && groupID > 0 {
-			s.resolvedDefaultGroupID = &groupID
+		groupID, err := s.resolveRuntimeDefaultGroupID(ctx)
+		if err == nil {
 			return groupID, nil
 		}
 		if s.defaultGroupID <= 0 {
@@ -305,6 +301,21 @@ func (s *UserSyncer) resolveDefaultGroupID(ctx context.Context) (int, error) {
 		}
 	}
 	return s.defaultGroupID, nil
+}
+
+func (s *UserSyncer) resolveRuntimeDefaultGroupID(ctx context.Context) (int, error) {
+	if s.resolvedDefaultGroupID != nil {
+		return *s.resolvedDefaultGroupID, nil
+	}
+	groupID, err := s.defaultGroupIDResolver(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if groupID <= 0 {
+		return 0, fmt.Errorf("运行时 Codesome group 选择返回无效 group_id: %d", groupID)
+	}
+	s.resolvedDefaultGroupID = &groupID
+	return groupID, nil
 }
 
 func (s *UserSyncer) usesRuntimeGroupSelection(user repository.User) bool {
