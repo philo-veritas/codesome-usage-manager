@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"codesome-usage-manager/internal/provider"
 	"codesome-usage-manager/internal/repository"
@@ -30,6 +31,7 @@ type UserSyncer struct {
 type UserSyncOptions struct {
 	DryRun     bool
 	EmployeeNo string
+	Full       bool
 }
 
 type UserSyncResult struct {
@@ -69,7 +71,7 @@ func (s *UserSyncer) SyncUsers(ctx context.Context, options UserSyncOptions) ([]
 
 	results := make([]UserSyncResult, 0, len(users))
 	for _, user := range users {
-		result, err := s.syncUser(ctx, user, options.DryRun)
+		result, err := s.syncUser(ctx, user, options.DryRun, options.Full)
 		if err != nil {
 			return nil, err
 		}
@@ -89,7 +91,7 @@ func (s *UserSyncer) resolveUsers(ctx context.Context, employeeNo string) ([]rep
 	return []repository.User{*user}, nil
 }
 
-func (s *UserSyncer) syncUser(ctx context.Context, user repository.User, dryRun bool) (UserSyncResult, error) {
+func (s *UserSyncer) syncUser(ctx context.Context, user repository.User, dryRun bool, full bool) (UserSyncResult, error) {
 	result := UserSyncResult{
 		EmployeeNo: user.EmployeeNo,
 		UserName:   user.Name,
@@ -102,7 +104,7 @@ func (s *UserSyncer) syncUser(ctx context.Context, user repository.User, dryRun 
 	if key == nil {
 		return s.syncUserWithoutKey(ctx, user, dryRun, result)
 	}
-	return s.syncUserWithKey(ctx, user, key, dryRun, result)
+	return s.syncUserWithKey(ctx, user, key, dryRun, full, result)
 }
 
 func (s *UserSyncer) syncUserWithoutKey(ctx context.Context, user repository.User, dryRun bool, result UserSyncResult) (UserSyncResult, error) {
@@ -171,43 +173,37 @@ func (s *UserSyncer) syncUserWithoutKey(ctx context.Context, user repository.Use
 	return result, nil
 }
 
-func (s *UserSyncer) syncUserWithKey(ctx context.Context, user repository.User, key *repository.APIKey, dryRun bool, result UserSyncResult) (UserSyncResult, error) {
+func (s *UserSyncer) syncUserWithKey(ctx context.Context, user repository.User, key *repository.APIKey, dryRun bool, full bool, result UserSyncResult) (UserSyncResult, error) {
 	desiredStatus := desiredKeyStatus(user)
 	desiredName := desiredKeyName(user)
-	if dryRun && user.Status == repository.UserStatusActive && s.usesRuntimeGroupSelection(user) {
-		return s.planUserWithRuntimeGroupSelection(key, desiredName, desiredStatus, result)
-	}
 
-	desiredGroupID := key.GroupID
-	if user.Status == repository.UserStatusActive {
+	desiredGroupID := s.localDesiredGroupIDForChangeCheck(user, key)
+	if user.Status == repository.UserStatusActive && !(dryRun && s.usesRuntimeGroupSelection(user)) {
 		resolvedGroupID, err := s.desiredExistingGroupID(ctx, user, key)
 		if err != nil {
 			return result, err
 		}
 		desiredGroupID = resolvedGroupID
 	}
-
-	localUpdate := provider.CodesomeKeyUpdate{}
-	if key.Status != desiredStatus {
-		localUpdate.Status = &desiredStatus
-	}
-	if user.Status == repository.UserStatusActive && key.GroupID != desiredGroupID {
-		localUpdate.GroupID = &desiredGroupID
-	}
-	if user.Status == repository.UserStatusActive && key.Name != desiredName {
-		localUpdate.Name = &desiredName
-	}
+	localUpdate := desiredKeyUpdate(user, key, desiredName, desiredStatus, desiredGroupID)
 
 	result.CodesomeKeyID = key.CodesomeKeyID
 	result.GroupID = desiredGroupID
-	if localUpdate.Status == nil && localUpdate.GroupID == nil && localUpdate.Name == nil {
+	if dryRun && user.Status == repository.UserStatusActive && s.usesRuntimeGroupSelection(user) {
+		return s.planUserWithRuntimeGroupSelection(key, desiredName, desiredStatus, result)
+	}
+	needsSync := shouldSyncExistingUser(user, key, localUpdate, full)
+	if !needsSync {
 		result.Action = "noop"
-		result.Message = "本地 key 状态已匹配"
+		result.Message = "本地 key 状态已匹配，未检测到本地变更"
+		return result, nil
+	}
+	if localUpdate.Status == nil && localUpdate.GroupID == nil && localUpdate.Name == nil {
+		result.Action = "sync"
+		result.Message = "重新应用期望状态到 Codesome key"
 		if dryRun {
 			return result, nil
 		}
-		result.Action = "sync"
-		result.Message = "重新应用期望状态到 Codesome key"
 	} else {
 		result.Action = "update"
 		result.Message = describeKeyUpdate(key, localUpdate)
@@ -330,6 +326,33 @@ func desiredKeyStatus(user repository.User) string {
 	return repository.APIKeyStatusInactive
 }
 
+func (s *UserSyncer) localDesiredGroupIDForChangeCheck(user repository.User, key *repository.APIKey) int {
+	if user.Status != repository.UserStatusActive {
+		return key.GroupID
+	}
+	if user.CodesomeGroupID != nil {
+		return *user.CodesomeGroupID
+	}
+	if s.defaultGroupID > 0 {
+		return s.defaultGroupID
+	}
+	return key.GroupID
+}
+
+func desiredKeyUpdate(user repository.User, key *repository.APIKey, desiredName string, desiredStatus string, desiredGroupID int) provider.CodesomeKeyUpdate {
+	update := provider.CodesomeKeyUpdate{}
+	if key.Status != desiredStatus {
+		update.Status = &desiredStatus
+	}
+	if user.Status == repository.UserStatusActive && key.GroupID != desiredGroupID {
+		update.GroupID = &desiredGroupID
+	}
+	if user.Status == repository.UserStatusActive && key.Name != desiredName {
+		update.Name = &desiredName
+	}
+	return update
+}
+
 func describeKeyUpdate(key *repository.APIKey, update provider.CodesomeKeyUpdate) string {
 	parts := ""
 	if update.Name != nil {
@@ -373,6 +396,29 @@ func expectedSyncedFields(key *repository.APIKey, update provider.CodesomeKeyUpd
 
 func isNotFound(err error) bool {
 	return err != nil && errors.Is(err, sql.ErrNoRows)
+}
+
+func shouldSyncExistingUser(user repository.User, key *repository.APIKey, update provider.CodesomeKeyUpdate, full bool) bool {
+	if full || hasKeyUpdate(update) || key.LastSyncedAt == nil {
+		return true
+	}
+	return userChangedAfterLastSync(user.UpdatedAt, *key.LastSyncedAt)
+}
+
+func hasKeyUpdate(update provider.CodesomeKeyUpdate) bool {
+	return update.Status != nil || update.GroupID != nil || update.Name != nil
+}
+
+func userChangedAfterLastSync(userUpdatedAt string, lastSyncedAt string) bool {
+	userUpdated, err := time.Parse(time.RFC3339, userUpdatedAt)
+	if err != nil {
+		return true
+	}
+	lastSynced, err := time.Parse(time.RFC3339, lastSyncedAt)
+	if err != nil {
+		return true
+	}
+	return userUpdated.After(lastSynced)
 }
 
 func fallbackString(value string, fallback string) string {

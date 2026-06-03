@@ -96,7 +96,7 @@ func TestSyncUsersDryRunRuntimeGroupPlanOverridesConfiguredDefault(t *testing.T)
 
 	results, err := NewUserSyncer(database, nil, 51).
 		WithRuntimeGroupSelectionPlan().
-		SyncUsers(ctx, UserSyncOptions{DryRun: true})
+		SyncUsers(ctx, UserSyncOptions{DryRun: true, Full: true})
 	if err != nil {
 		t.Fatalf("sync users dry run: %v", err)
 	}
@@ -127,6 +127,37 @@ func TestSyncUsersDryRunRuntimeGroupPlanForExistingKey(t *testing.T) {
 
 	results, err := NewUserSyncer(database, nil, 51).
 		WithRuntimeGroupSelectionPlan().
+		SyncUsers(ctx, UserSyncOptions{DryRun: true, Full: true})
+	if err != nil {
+		t.Fatalf("sync users dry run: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "sync" || results[0].GroupID != 0 {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if !strings.Contains(results[0].Message, "真实运行时") {
+		t.Fatalf("expected runtime group message, got %+v", results[0])
+	}
+}
+
+func TestSyncUsersDryRunRuntimeGroupPlanForUnchangedExistingKeyByDefault(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	results, err := NewUserSyncer(database, nil, 51).
+		WithRuntimeGroupSelectionPlan().
 		SyncUsers(ctx, UserSyncOptions{DryRun: true})
 	if err != nil {
 		t.Fatalf("sync users dry run: %v", err)
@@ -136,6 +167,66 @@ func TestSyncUsersDryRunRuntimeGroupPlanForExistingKey(t *testing.T) {
 	}
 	if !strings.Contains(results[0].Message, "真实运行时") {
 		t.Fatalf("expected runtime group message, got %+v", results[0])
+	}
+}
+
+func TestSyncUsersDryRunWithResolverSkipsUnchangedExistingKey(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	results, err := NewUserSyncer(database, nil, 51).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			return 51, nil
+		}).
+		SyncUsers(ctx, UserSyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("sync users dry run: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "noop" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+}
+
+func TestSyncUsersDryRunWithResolverPlansLiveGroupChange(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	results, err := NewUserSyncer(database, nil, 51).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			return 60, nil
+		}).
+		SyncUsers(ctx, UserSyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("sync users dry run: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "update" || results[0].GroupID != 60 {
+		t.Fatalf("unexpected results: %+v", results)
 	}
 }
 
@@ -164,6 +255,36 @@ func TestSyncUsersDoesNotResolveDefaultGroupWhenInactiveUserNeedsNoKey(t *testin
 		t.Fatal("default group resolver should not be called")
 	}
 	if len(results) != 1 || results[0].Action != "noop" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+}
+
+func TestSyncUsersDryRunInactiveUserKeepsExistingKeyGroup(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{
+		EmployeeNo: "E12345",
+		Name:       "Alice",
+		Status:     repository.UserStatusInactive,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusInactive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	results, err := NewUserSyncer(database, nil, 60).SyncUsers(ctx, UserSyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("sync users dry run: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "noop" || results[0].GroupID != 51 {
 		t.Fatalf("unexpected results: %+v", results)
 	}
 }
@@ -238,6 +359,47 @@ func TestSyncUsersUsesExistingKeyGroupWhenDefaultGroupMissing(t *testing.T) {
 	}
 }
 
+func TestSyncUsersSkipsUnchangedExistingKeyByDefault(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+	service := &fakeUserKeyService{
+		updateResult: &provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 51, Status: "active"},
+	}
+	called := false
+
+	results, err := NewUserSyncer(database, service, 0).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			called = true
+			return 51, nil
+		}).
+		SyncUsers(ctx, UserSyncOptions{})
+	if err != nil {
+		t.Fatalf("sync users: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "noop" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if len(service.updates) != 0 {
+		t.Fatalf("expected no update calls, got %+v", service.updates)
+	}
+	if !called {
+		t.Fatal("default group resolver should be called to detect live group changes")
+	}
+}
+
 func TestSyncUsersReappliesExistingKeyState(t *testing.T) {
 	database := newTestDatabase(t)
 	ctx := context.Background()
@@ -260,7 +422,7 @@ func TestSyncUsersReappliesExistingKeyState(t *testing.T) {
 		updateResult: &provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 51, Status: "active"},
 	}
 
-	results, err := NewUserSyncer(database, service, 51).SyncUsers(ctx, UserSyncOptions{})
+	results, err := NewUserSyncer(database, service, 51).SyncUsers(ctx, UserSyncOptions{Full: true})
 	if err != nil {
 		t.Fatalf("sync users: %v", err)
 	}
@@ -272,6 +434,153 @@ func TestSyncUsersReappliesExistingKeyState(t *testing.T) {
 	}
 	update := service.updates[0].update
 	if update.Name == nil || *update.Name != "Alice" || update.GroupID == nil || *update.GroupID != 51 || update.Status == nil || *update.Status != "active" {
+		t.Fatalf("unexpected update payload: %+v", update)
+	}
+}
+
+func TestSyncUsersSyncsExistingKeyWithoutLastSyncedAtByDefault(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	key, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	})
+	if err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `UPDATE api_keys SET last_synced_at = NULL WHERE id = ?`, key.ID); err != nil {
+		t.Fatalf("clear last synced at: %v", err)
+	}
+	service := &fakeUserKeyService{
+		updateResult: &provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 51, Status: "active"},
+	}
+
+	results, err := NewUserSyncer(database, service, 51).SyncUsers(ctx, UserSyncOptions{})
+	if err != nil {
+		t.Fatalf("sync users: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "sync" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if len(service.updates) != 1 {
+		t.Fatalf("expected one update call, got %+v", service.updates)
+	}
+}
+
+func TestSyncUsersSyncsLocallyUpdatedUserByDefault(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `UPDATE users SET updated_at = ? WHERE id = ?`, "2099-01-01T00:00:00Z", user.ID); err != nil {
+		t.Fatalf("update user timestamp: %v", err)
+	}
+	service := &fakeUserKeyService{
+		updateResult: &provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 51, Status: "active"},
+	}
+
+	results, err := NewUserSyncer(database, service, 51).SyncUsers(ctx, UserSyncOptions{})
+	if err != nil {
+		t.Fatalf("sync users: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "sync" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if len(service.updates) != 1 {
+		t.Fatalf("expected one update call, got %+v", service.updates)
+	}
+}
+
+func TestSyncUsersUpdatesConfiguredDefaultGroupChangeByDefault(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+	service := &fakeUserKeyService{
+		updateResult: &provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 60, Status: "active"},
+	}
+
+	results, err := NewUserSyncer(database, service, 60).SyncUsers(ctx, UserSyncOptions{})
+	if err != nil {
+		t.Fatalf("sync users: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "update" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if len(service.updates) != 1 {
+		t.Fatalf("expected one update call, got %+v", service.updates)
+	}
+	update := service.updates[0].update
+	if update.GroupID == nil || *update.GroupID != 60 {
+		t.Fatalf("unexpected update payload: %+v", update)
+	}
+}
+
+func TestSyncUsersUpdatesLiveDefaultGroupChangeByDefault(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+	service := &fakeUserKeyService{
+		updateResult: &provider.CodesomeApiKey{ID: 6732, Name: "Alice", GroupID: 60, Status: "active"},
+	}
+
+	results, err := NewUserSyncer(database, service, 51).
+		WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
+			return 60, nil
+		}).
+		SyncUsers(ctx, UserSyncOptions{})
+	if err != nil {
+		t.Fatalf("sync users: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "update" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if len(service.updates) != 1 {
+		t.Fatalf("expected one update call, got %+v", service.updates)
+	}
+	update := service.updates[0].update
+	if update.GroupID == nil || *update.GroupID != 60 {
 		t.Fatalf("unexpected update payload: %+v", update)
 	}
 }

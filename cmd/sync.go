@@ -18,6 +18,7 @@ import (
 var (
 	syncUsersDryRun     bool
 	syncUsersEmployeeNo string
+	syncUsersFull       bool
 
 	syncUsageDate         string
 	syncUsageFromDate     string
@@ -55,8 +56,9 @@ var syncUsageCmd = &cobra.Command{
 func init() {
 	syncCmd.PersistentFlags().StringVar(&dbPath, "path", "", "SQLite 数据库路径")
 
-	syncUsersCmd.Flags().BoolVar(&syncUsersDryRun, "dry-run", false, "只输出同步计划，不调用 Codesome")
+	syncUsersCmd.Flags().BoolVar(&syncUsersDryRun, "dry-run", false, "只输出同步计划，不创建或更新 Codesome key")
 	syncUsersCmd.Flags().StringVar(&syncUsersEmployeeNo, "employee-no", "", "只同步指定员工")
+	syncUsersCmd.Flags().BoolVar(&syncUsersFull, "full", false, "全量收敛所有匹配的本地用户，重新应用期望状态")
 	syncCmd.AddCommand(syncUsersCmd)
 
 	syncUsageCmd.Flags().StringVar(&syncUsageDate, "date", "", "同步指定日期 YYYY-MM-DD")
@@ -94,9 +96,7 @@ func runSyncUsers(cmd *cobra.Command, args []string) error {
 	}
 
 	syncer := usersync.NewUserSyncer(database, service, defaultGroupID)
-	if syncUsersDryRun && cfg.GetCodesomeConfig() != nil {
-		syncer.WithRuntimeGroupSelectionPlan()
-	} else if !syncUsersDryRun && cfg.GetCodesomeConfig() != nil {
+	if cfg.GetCodesomeConfig() != nil {
 		syncer.WithDefaultGroupIDResolver(func(ctx context.Context) (int, error) {
 			return provider.BestCodesomeGroupID(cfg)
 		})
@@ -105,6 +105,7 @@ func runSyncUsers(cmd *cobra.Command, args []string) error {
 	results, err := syncer.SyncUsers(ctx, usersync.UserSyncOptions{
 		DryRun:     syncUsersDryRun,
 		EmployeeNo: syncUsersEmployeeNo,
+		Full:       syncUsersFull,
 	})
 	if err != nil {
 		return err

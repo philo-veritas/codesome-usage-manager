@@ -256,6 +256,7 @@ codesome user list
 codesome sync users
 codesome sync users --dry-run
 codesome sync users --employee-no E12345
+codesome sync users --full
 ```
 
 同步行为：
@@ -266,7 +267,19 @@ codesome sync users --employee-no E12345
 4. 对状态、group、name 不一致的 key 调用 Codesome 更新接口。
 5. 写入 `api_keys.last_synced_at`。
 
-`--dry-run` 只输出计划，不调用 Codesome。
+默认只同步本地变更：
+
+- active user 缺失本地 key 时创建远端 key。
+- 本地 key 状态、group、name 与 user 期望不一致时更新远端 key。
+- `api_keys.last_synced_at` 为空时补同步一次。
+- `users.updated_at` 晚于 `api_keys.last_synced_at` 时重新应用期望状态。
+- 其他已匹配 user 输出 `noop`，不调用 Codesome。
+
+对于未设置个人 `codesome_group_id` 的 active user，期望 group 仍按运行时可用余额最多的 group 计算；默认模式会读取 Codesome subscription 来判断 group 是否需要更新，但只对有差异的 key 调用更新接口。
+
+`--full` 会全量收敛匹配到的本地 user，重新应用所有现有 key 的期望状态。它用于修正远端被人工修改但本地未变化的漂移。
+
+`--dry-run` 只输出计划，不创建或更新 Codesome key；为准确预览运行时 group 选择，它可能读取 Codesome subscription。
 
 ### Key 分发与导出
 
