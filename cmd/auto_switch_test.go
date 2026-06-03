@@ -37,7 +37,7 @@ func TestNextAutoSwitchIntervalUsesObservedBurnRate(t *testing.T) {
 	}
 }
 
-func TestRemainingFromSwitchResultsPrefersTargetRemainingAfterSwitch(t *testing.T) {
+func TestRemainingFromSwitchResultsUsesLowestEffectiveRemaining(t *testing.T) {
 	results := []provider.CodesomeGroupSwitchBatchResult{
 		{
 			Result: &provider.CodesomeGroupSwitchResult{
@@ -48,14 +48,14 @@ func TestRemainingFromSwitchResultsPrefersTargetRemainingAfterSwitch(t *testing.
 		},
 		{
 			Result: &provider.CodesomeGroupSwitchResult{
-				CurrentRemainingUSD: 100,
+				CurrentRemainingUSD: 20,
 			},
 		},
 	}
 
 	got := remainingFromSwitchResults(results)
-	if got != 100 {
-		t.Fatalf("expected remaining 100, got %.2f", got)
+	if got != 20 {
+		t.Fatalf("expected remaining 20, got %.2f", got)
 	}
 }
 

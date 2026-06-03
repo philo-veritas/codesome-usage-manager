@@ -174,7 +174,8 @@ func switchKeysOnExhausted(cfg *config.Config, minRemainingUSD float64, printf f
 }
 
 func remainingFromSwitchResults(results []provider.CodesomeGroupSwitchBatchResult) float64 {
-	remaining := 0.0
+	var remaining float64
+	found := false
 	for _, item := range results {
 		if item.Result == nil {
 			continue
@@ -183,8 +184,9 @@ func remainingFromSwitchResults(results []provider.CodesomeGroupSwitchBatchResul
 		if item.Result.Switched && item.Result.TargetRemainingUSD > 0 {
 			candidate = item.Result.TargetRemainingUSD
 		}
-		if candidate > remaining {
+		if !found || candidate < remaining {
 			remaining = candidate
+			found = true
 		}
 	}
 	return remaining
