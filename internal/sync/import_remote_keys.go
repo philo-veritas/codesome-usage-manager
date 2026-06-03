@@ -80,8 +80,14 @@ func (i *RemoteKeyImporter) importOne(ctx context.Context, key provider.Codesome
 	}
 
 	if i.keys != nil {
-		if _, err := i.keys.GetByCodesomeKeyID(ctx, key.ID); err == nil {
+		if existingKey, err := i.keys.GetByCodesomeKeyID(ctx, key.ID); err == nil {
 			result.Action = "skip"
+			existingUser, err := i.users.GetByID(ctx, existingKey.UserID)
+			if err != nil {
+				return ImportRemoteKeysResult{}, err
+			}
+			result.EmployeeNo = existingUser.EmployeeNo
+			result.UserName = existingUser.Name
 			return result, nil
 		} else if !isRepositoryNotFound(err) {
 			return ImportRemoteKeysResult{}, err

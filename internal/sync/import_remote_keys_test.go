@@ -60,6 +60,37 @@ func TestRemoteKeyImporterCreatesVirtualUsersAndKeys(t *testing.T) {
 	}
 }
 
+func TestRemoteKeyImporterSkipShowsExistingUser(t *testing.T) {
+	database := newTestDatabase(t)
+	ctx := context.Background()
+	user, err := repository.NewUserRepository(database).Create(ctx, repository.CreateUserParams{
+		EmployeeNo: "E12345",
+		Name:       "Alice",
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := repository.NewAPIKeyRepository(database).Create(ctx, repository.CreateAPIKeyParams{
+		UserID:        user.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        repository.APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	results, err := NewRemoteKeyImporter(database).Import(ctx, []provider.CodesomeApiKey{
+		{ID: 6732, Name: "Alice", GroupID: 51, Status: "active"},
+	}, ImportRemoteKeysOptions{})
+	if err != nil {
+		t.Fatalf("import remote keys: %v", err)
+	}
+	if len(results) != 1 || results[0].Action != "skip" || results[0].EmployeeNo != "E12345" || results[0].UserName != "Alice" {
+		t.Fatalf("expected skip to show existing user, got %+v", results)
+	}
+}
+
 func TestRemoteKeyImporterUsesEmbeddedGroupID(t *testing.T) {
 	database := newTestDatabase(t)
 	keys := []provider.CodesomeApiKey{
