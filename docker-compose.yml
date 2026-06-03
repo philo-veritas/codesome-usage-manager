@@ -16,7 +16,7 @@ services:
     build: .
     container_name: codesome-usage-auto-switch
     profiles: ["auto-switch"]
-    command: ["auto-switch", "--min-remaining", "10", "--min-interval", "2m", "--max-interval", "2h"]
+    command: ["auto-switch", "--min-remaining", "10", "--min-interval", "2m", "--max-interval", "30m"]
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./.usage_cache.json:/app/.usage_cache.json
