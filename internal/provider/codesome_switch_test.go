@@ -428,6 +428,19 @@ func TestGetCodesomeKeyUsageStatsValidatesInput(t *testing.T) {
 	}
 }
 
+func TestGetCodesomeKeysDailyUsageValidatesInput(t *testing.T) {
+	cfg := &config.Config{Codesome: &config.CodesomeConfig{}}
+	if _, err := GetCodesomeKeysDailyUsage(&config.Config{}, []int{6732}); err == nil {
+		t.Fatal("expected missing Codesome config to fail")
+	}
+	if _, err := GetCodesomeKeysDailyUsage(cfg, nil); err == nil {
+		t.Fatal("expected empty key ids to fail")
+	}
+	if _, err := GetCodesomeKeysDailyUsage(cfg, []int{6732, 0}); err == nil {
+		t.Fatal("expected invalid key id to fail")
+	}
+}
+
 func TestFetchCodesomeUsageRequiresCodesomeConfig(t *testing.T) {
 	cfg := &config.Config{}
 	if _, _, _, _, err := FetchCodesomeUsage(cfg, false); err == nil {

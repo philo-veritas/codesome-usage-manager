@@ -692,28 +692,56 @@ func clearCodesomeGroupSwitchCaches() {
 
 // fetchKeyDailyUsage queries the usage API for a single key and returns its TodayCost.
 func (c *codesomeClient) fetchKeyDailyUsage(keyID int) (float64, error) {
-	data, err := c.request("POST", "/api/v1/usage/dashboard/api-keys-usage", map[string]any{
-		"api_key_ids": []int{keyID},
-	})
+	usageMap, err := c.fetchKeysDailyUsage([]int{keyID})
 	if err != nil {
 		return 0, err
 	}
-	var resp codesomeUsageResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return 0, fmt.Errorf("failed to parse usage data: %w", err)
-	}
-	for _, u := range resp.Stats {
-		if u.ApiKeyID == keyID {
-			return u.TodayCost, nil
-		}
+	if usage, ok := usageMap[keyID]; ok {
+		return usage.TodayCost, nil
 	}
 	return 0, fmt.Errorf("usage data not found for key %d", keyID)
+}
+
+func (c *codesomeClient) fetchKeysDailyUsage(keyIDs []int) (map[int]CodesomeKeyUsage, error) {
+	data, err := c.request("POST", "/api/v1/usage/dashboard/api-keys-usage", map[string]any{
+		"api_key_ids": keyIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var resp codesomeUsageResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse usage data: %w", err)
+	}
+
+	usageMap := make(map[int]CodesomeKeyUsage, len(resp.Stats))
+	for _, u := range resp.Stats {
+		usageMap[u.ApiKeyID] = u
+	}
+	return usageMap, nil
 }
 
 // GetCodesomeKeyDailyUsage returns the today cost for a specific API key.
 func GetCodesomeKeyDailyUsage(cfg *config.Config, keyID int) (float64, error) {
 	client := newCodesomeClient(cfg)
 	return client.fetchKeyDailyUsage(keyID)
+}
+
+// GetCodesomeKeysDailyUsage returns today usage for multiple API keys.
+func GetCodesomeKeysDailyUsage(cfg *config.Config, keyIDs []int) (map[int]CodesomeKeyUsage, error) {
+	if cfg == nil || cfg.GetCodesomeConfig() == nil {
+		return nil, fmt.Errorf("未找到 Codesome 配置")
+	}
+	if len(keyIDs) == 0 {
+		return nil, fmt.Errorf("api key ids are required")
+	}
+	for _, keyID := range keyIDs {
+		if keyID <= 0 {
+			return nil, fmt.Errorf("key_id 必须为正整数")
+		}
+	}
+	client := newCodesomeClient(cfg)
+	return client.fetchKeysDailyUsage(keyIDs)
 }
 
 // GetCodesomeKeyUsageStats returns aggregate usage stats for an inclusive date range.

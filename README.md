@@ -64,7 +64,7 @@ go build ./...
 | Users | `user add`, `user import`, `user import-feishu`, `user update`, `user delete`, `user list` |
 | API keys | `sync users`, `key export`, `create-key`, `update-key` |
 | Feishu | `feishu bitable explore`, `feishu send-keys` |
-| Usage | `sync usage`, `usage-stats`, `daily-usage`, default `codesome` usage view |
+| Usage | `usage today`, `sync usage`, `usage-stats`, `daily-usage`, default `codesome` usage view |
 | Reports | `report monthly` |
 | Service | `serve`, `switch-on-exhausted`, `auto-switch` |
 
@@ -170,6 +170,16 @@ codesome key export --team platform --output keys-platform.csv
 codesome key export --all --output keys.csv
 codesome key export --all --include-inactive --output keys-all.csv
 ```
+
+Query today's usage for active API keys from the local database:
+
+```bash
+codesome usage today
+codesome usage today --sort-by-today-cost
+codesome usage today --include-inactive
+```
+
+Rows marked `remote_missing` exist in local SQLite but were not returned by the Codesome usage API, usually because the remote API key was deleted.
 
 Sync local usage history:
 

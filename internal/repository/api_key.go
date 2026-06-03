@@ -55,6 +55,10 @@ type ListAPIKeyExportRowsParams struct {
 	IncludeInactive bool
 }
 
+type ListAPIKeyDailyUsageTargetsParams struct {
+	IncludeInactive bool
+}
+
 type APIKeyRepository struct {
 	db *sql.DB
 }
@@ -272,6 +276,44 @@ ORDER BY api_keys.id
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate api key usage targets: %w", err)
+	}
+	return result, nil
+}
+
+func (r *APIKeyRepository) ListDailyUsageTargets(ctx context.Context, params ListAPIKeyDailyUsageTargetsParams) ([]APIKeyUsageTarget, error) {
+	conditions := []string{"users.status != ?"}
+	args := []any{UserStatusDeleted}
+	if !params.IncludeInactive {
+		conditions = append(conditions, "users.status = ?", "api_keys.status = ?")
+		args = append(args, UserStatusActive, APIKeyStatusActive)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+  api_keys.id,
+  api_keys.codesome_key_id,
+  api_keys.name,
+  users.status
+FROM api_keys
+JOIN users ON api_keys.user_id = users.id
+WHERE `+strings.Join(conditions, " AND ")+`
+ORDER BY api_keys.id
+`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list api key daily usage targets: %w", err)
+	}
+	defer rows.Close()
+
+	var result []APIKeyUsageTarget
+	for rows.Next() {
+		var target APIKeyUsageTarget
+		if err := rows.Scan(&target.ID, &target.CodesomeKeyID, &target.Name, &target.UserStatus); err != nil {
+			return nil, fmt.Errorf("scan api key daily usage target: %w", err)
+		}
+		result = append(result, target)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate api key daily usage targets: %w", err)
 	}
 	return result, nil
 }

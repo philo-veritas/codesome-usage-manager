@@ -230,6 +230,68 @@ func TestAPIKeyRepositoryListUsageTargetsSkipsDeletedUsers(t *testing.T) {
 	}
 }
 
+func TestAPIKeyRepositoryListDailyUsageTargetsFiltersActiveByDefault(t *testing.T) {
+	_, userRepo := newTestUserRepositories(t)
+	ctx := context.Background()
+	activeUser, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create active user: %v", err)
+	}
+	inactiveUser, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E99999", Name: "Bob"})
+	if err != nil {
+		t.Fatalf("create inactive user: %v", err)
+	}
+	inactiveStatus := UserStatusInactive
+	if _, err := userRepo.Update(ctx, "E99999", UpdateUserParams{Status: &inactiveStatus}); err != nil {
+		t.Fatalf("deactivate user: %v", err)
+	}
+
+	repo := NewAPIKeyRepository(userRepo.db)
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        activeUser.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create active key: %v", err)
+	}
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        activeUser.ID,
+		CodesomeKeyID: 6733,
+		Name:          "Alice inactive",
+		Status:        APIKeyStatusInactive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create inactive key: %v", err)
+	}
+	if _, err := repo.Create(ctx, CreateAPIKeyParams{
+		UserID:        inactiveUser.ID,
+		CodesomeKeyID: 6734,
+		Name:          "Bob",
+		Status:        APIKeyStatusActive,
+		GroupID:       51,
+	}); err != nil {
+		t.Fatalf("create inactive user key: %v", err)
+	}
+
+	targets, err := repo.ListDailyUsageTargets(ctx, ListAPIKeyDailyUsageTargetsParams{})
+	if err != nil {
+		t.Fatalf("list daily usage targets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].CodesomeKeyID != 6732 {
+		t.Fatalf("unexpected active targets: %+v", targets)
+	}
+
+	targets, err = repo.ListDailyUsageTargets(ctx, ListAPIKeyDailyUsageTargetsParams{IncludeInactive: true})
+	if err != nil {
+		t.Fatalf("list daily usage targets with inactive: %v", err)
+	}
+	if len(targets) != 3 {
+		t.Fatalf("expected 3 targets with inactive, got %+v", targets)
+	}
+}
+
 func TestAPIKeyRepositoryListActiveSwitchTargets(t *testing.T) {
 	_, userRepo := newTestUserRepositories(t)
 	ctx := context.Background()
