@@ -241,7 +241,7 @@ func sendFeishuKey(ctx context.Context, client feishuMessageClient, row reposito
 }
 
 func buildFeishuKeyMessage(row repository.APIKeyExportRow, rawKey string) string {
-	return fmt.Sprintf("你的 Codesome API Key 已生成。\n\n名称：%s\nKey：%s\n\n请妥善保管，不要转发给他人。", row.KeyName, rawKey)
+	return fmt.Sprintf("你的 Codesome Codex API Key 已生成。\n\n名称：%s\nKey：%s\n\n请妥善保管，不要转发给他人。", row.KeyName, rawKey)
 }
 
 func printFeishuBitableFields(fields []provider.FeishuBitableField) {
