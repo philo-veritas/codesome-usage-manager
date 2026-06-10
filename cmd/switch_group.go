@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -186,19 +187,50 @@ func printGroupSwitchBatchResults(results []provider.CodesomeGroupSwitchBatchRes
 
 func printGroupSwitchBatchResultsWith(results []provider.CodesomeGroupSwitchBatchResult, printf func(string, ...any)) bool {
 	hasErrors := false
+	type batchPrintEntry struct {
+		groupKey  resultPrintKey
+		errorLine string
+	}
+	type batchPrintGroup struct {
+		labels []string
+		result *provider.CodesomeGroupSwitchResult
+	}
+
+	entries := make([]batchPrintEntry, 0, len(results))
+	groups := make(map[resultPrintKey]*batchPrintGroup)
 	for _, item := range results {
 		keyLabel := formatKeyLabel(item.KeyID, item.Name)
 		if item.Error != "" {
 			hasErrors = true
-			printf("API Key %s 执行失败：%s\n", keyLabel, item.Error)
+			entries = append(entries, batchPrintEntry{
+				errorLine: fmt.Sprintf("API Key %s 执行失败：%s\n", keyLabel, item.Error),
+			})
 			continue
 		}
 		if item.Result == nil {
 			hasErrors = true
-			printf("API Key %s 执行失败：未返回执行结果\n", keyLabel)
+			entries = append(entries, batchPrintEntry{
+				errorLine: fmt.Sprintf("API Key %s 执行失败：未返回执行结果\n", keyLabel),
+			})
 			continue
 		}
-		printGroupSwitchResultWithLabelWith(keyLabel, item.Result, printf)
+		groupKey := newResultPrintKey(item.Result)
+		group, ok := groups[groupKey]
+		if !ok {
+			group = &batchPrintGroup{result: item.Result}
+			groups[groupKey] = group
+			entries = append(entries, batchPrintEntry{groupKey: groupKey})
+		}
+		group.labels = append(group.labels, keyLabel)
+	}
+
+	for _, entry := range entries {
+		if entry.errorLine != "" {
+			printf("%s", entry.errorLine)
+			continue
+		}
+		group := groups[entry.groupKey]
+		printGroupSwitchResultWithSubjectWith(formatBatchKeySubject(group.labels), group.result, printf)
 	}
 	return hasErrors
 }
@@ -208,10 +240,14 @@ func printGroupSwitchResultWithLabel(keyLabel string, result *provider.CodesomeG
 }
 
 func printGroupSwitchResultWithLabelWith(keyLabel string, result *provider.CodesomeGroupSwitchResult, printf func(string, ...any)) {
+	printGroupSwitchResultWithSubjectWith(fmt.Sprintf("API Key %s", keyLabel), result, printf)
+}
+
+func printGroupSwitchResultWithSubjectWith(subject string, result *provider.CodesomeGroupSwitchResult, printf func(string, ...any)) {
 	if result.Switched {
 		printf(
-			"API Key %s 已切换 group: %s -> %s，当前剩余额度 $%.2f，目标剩余额度 $%.2f\n",
-			keyLabel,
+			"%s 已切换 group: %s -> %s，当前剩余额度 $%.2f，目标剩余额度 $%.2f\n",
+			subject,
 			formatGroupLabel(result.FromGroupID, result.FromGroupName),
 			formatGroupLabel(result.ToGroupID, result.ToGroupName),
 			result.CurrentRemainingUSD,
@@ -221,12 +257,52 @@ func printGroupSwitchResultWithLabelWith(keyLabel string, result *provider.Codes
 	}
 
 	printf(
-		"API Key %s 未切换：%s，当前 group %s 剩余额度 $%.2f\n",
-		keyLabel,
+		"%s 未切换：%s，当前 group %s 剩余额度 $%.2f\n",
+		subject,
 		result.Message,
 		formatGroupLabel(result.FromGroupID, result.FromGroupName),
 		result.CurrentRemainingUSD,
 	)
+}
+
+type resultPrintKey struct {
+	switched            bool
+	fromGroupID         int
+	fromGroupName       string
+	toGroupID           int
+	toGroupName         string
+	currentRemainingUSD float64
+	targetRemainingUSD  float64
+	message             string
+}
+
+func newResultPrintKey(result *provider.CodesomeGroupSwitchResult) resultPrintKey {
+	message := result.Message
+	if result.Switched {
+		message = ""
+	}
+	return resultPrintKey{
+		switched:            result.Switched,
+		fromGroupID:         result.FromGroupID,
+		fromGroupName:       result.FromGroupName,
+		toGroupID:           result.ToGroupID,
+		toGroupName:         result.ToGroupName,
+		currentRemainingUSD: result.CurrentRemainingUSD,
+		targetRemainingUSD:  result.TargetRemainingUSD,
+		message:             message,
+	}
+}
+
+func formatBatchKeySubject(labels []string) string {
+	if len(labels) == 1 {
+		return fmt.Sprintf("API Key %s", labels[0])
+	}
+
+	const maxVisible = 3
+	if len(labels) <= maxVisible {
+		return fmt.Sprintf("API Keys %s", strings.Join(labels, ", "))
+	}
+	return fmt.Sprintf("API Keys %s, ...（共 %d 个）", strings.Join(labels[:maxVisible], ", "), len(labels))
 }
 
 func stdoutPrintf(format string, args ...any) {

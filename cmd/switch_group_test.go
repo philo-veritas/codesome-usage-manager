@@ -28,6 +28,124 @@ func TestPrintSubscriptionUsageSummary(t *testing.T) {
 	}
 }
 
+func TestPrintGroupSwitchBatchResultsGroupsEquivalentResults(t *testing.T) {
+	results := []provider.CodesomeGroupSwitchBatchResult{
+		{
+			KeyID:  6732,
+			Name:   "Alice",
+			Result: groupSwitchResult(51, "default", 120, "API Key 已绑定当前剩余额度最高的 group，无需切换"),
+		},
+		{
+			KeyID:  6733,
+			Name:   "Bob",
+			Result: groupSwitchResult(51, "default", 120, "API Key 已绑定当前剩余额度最高的 group，无需切换"),
+		},
+		{
+			KeyID:  6734,
+			Name:   "Carol",
+			Result: groupSwitchResult(51, "default", 120, "API Key 已绑定当前剩余额度最高的 group，无需切换"),
+		},
+		{
+			KeyID:  6735,
+			Name:   "Dave",
+			Result: groupSwitchResult(51, "default", 120, "API Key 已绑定当前剩余额度最高的 group，无需切换"),
+		},
+	}
+
+	got, hasErrors := collectGroupSwitchBatchOutput(results)
+	if hasErrors {
+		t.Fatal("expected no errors")
+	}
+	want := "API Keys 6732(Alice), 6733(Bob), 6734(Carol), ...（共 4 个） 未切换：API Key 已绑定当前剩余额度最高的 group，无需切换，当前 group 51(default) 剩余额度 $120.00\n"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestPrintGroupSwitchBatchResultsKeepsDifferentGroupsSeparate(t *testing.T) {
+	results := []provider.CodesomeGroupSwitchBatchResult{
+		{
+			KeyID:  6732,
+			Result: groupSwitchResult(51, "", 120, "当前 group 剩余额度 $120.00，不低于阈值 $10.00"),
+		},
+		{
+			KeyID:  6733,
+			Result: groupSwitchResult(60, "", 80, "当前 group 剩余额度 $80.00，不低于阈值 $10.00"),
+		},
+	}
+
+	got, _ := collectGroupSwitchBatchOutput(results)
+	want := "API Key 6732 未切换：当前 group 剩余额度 $120.00，不低于阈值 $10.00，当前 group 51 剩余额度 $120.00\n" +
+		"API Key 6733 未切换：当前 group 剩余额度 $80.00，不低于阈值 $10.00，当前 group 60 剩余额度 $80.00\n"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestPrintGroupSwitchBatchResultsKeepsErrorsPerKey(t *testing.T) {
+	results := []provider.CodesomeGroupSwitchBatchResult{
+		{KeyID: 6732, Name: "Alice", Error: "not found"},
+		{KeyID: 6733, Name: "Bob"},
+	}
+
+	got, hasErrors := collectGroupSwitchBatchOutput(results)
+	if !hasErrors {
+		t.Fatal("expected errors")
+	}
+	want := "API Key 6732(Alice) 执行失败：not found\n" +
+		"API Key 6733(Bob) 执行失败：未返回执行结果\n"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestPrintGroupSwitchBatchResultsGroupsSwitchedResults(t *testing.T) {
+	results := []provider.CodesomeGroupSwitchBatchResult{
+		{
+			KeyID:  6732,
+			Result: switchedGroupSwitchResult(6732),
+		},
+		{
+			KeyID:  6733,
+			Result: switchedGroupSwitchResult(6733),
+		},
+	}
+
+	got, _ := collectGroupSwitchBatchOutput(results)
+	want := "API Keys 6732, 6733 已切换 group: 51 -> 60，当前剩余额度 $5.00，目标剩余额度 $200.00\n"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func collectGroupSwitchBatchOutput(results []provider.CodesomeGroupSwitchBatchResult) (string, bool) {
+	var got string
+	hasErrors := printGroupSwitchBatchResultsWith(results, func(format string, args ...any) {
+		got += fmt.Sprintf(format, args...)
+	})
+	return got, hasErrors
+}
+
+func groupSwitchResult(groupID int, groupName string, remaining float64, message string) *provider.CodesomeGroupSwitchResult {
+	return &provider.CodesomeGroupSwitchResult{
+		FromGroupID:         groupID,
+		FromGroupName:       groupName,
+		CurrentRemainingUSD: remaining,
+		Message:             message,
+	}
+}
+
+func switchedGroupSwitchResult(keyID int) *provider.CodesomeGroupSwitchResult {
+	return &provider.CodesomeGroupSwitchResult{
+		Switched:            true,
+		FromGroupID:         51,
+		ToGroupID:           60,
+		CurrentRemainingUSD: 5,
+		TargetRemainingUSD:  200,
+		Message:             fmt.Sprintf("API Key %d 已切换到当前剩余额度最高的 group 60", keyID),
+	}
+}
+
 func TestLoadSwitchOnExhaustedAllKeyConfigsUsesActiveDBKeys(t *testing.T) {
 	originalPath := dbPath
 	defer func() { dbPath = originalPath }()
