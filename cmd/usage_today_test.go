@@ -91,3 +91,33 @@ func TestPrintUsageTodayResults(t *testing.T) {
 		t.Fatalf("missing remote missing row: %s", got)
 	}
 }
+
+func TestPrintUsageTodayReportIncludesSubscriptionSummary(t *testing.T) {
+	var buf bytes.Buffer
+	printUsageTodayReport(
+		&buf,
+		provider.CodesomeSubscriptionUsageSummary{
+			RemainingUSD: 315.49,
+			LimitUSD:     1740,
+		},
+		[]usageTodayResult{
+			{
+				target: repository.APIKeyUsageTarget{
+					CodesomeKeyID: 6732,
+					Name:          "Alice",
+					UserStatus:    repository.UserStatusActive,
+				},
+				usage:      provider.CodesomeKeyUsage{TodayCost: 1.25, TotalCost: 3.5},
+				usageFound: true,
+			},
+		},
+	)
+
+	got := buf.String()
+	if !strings.Contains(got, "今日总余额：$315.49 / $1740.00") {
+		t.Fatalf("missing subscription summary: %s", got)
+	}
+	if !strings.Contains(got, "KEY_ID") || !strings.Contains(got, "6732") || !strings.Contains(got, "Alice") {
+		t.Fatalf("missing usage table: %s", got)
+	}
+}

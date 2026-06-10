@@ -744,6 +744,19 @@ func GetCodesomeKeysDailyUsage(cfg *config.Config, keyIDs []int) (map[int]Codeso
 	return client.fetchKeysDailyUsage(keyIDs)
 }
 
+// GetCodesomeSubscriptionUsageSummary returns today's active subscription balance summary.
+func GetCodesomeSubscriptionUsageSummary(cfg *config.Config) (CodesomeSubscriptionUsageSummary, error) {
+	if cfg == nil || cfg.GetCodesomeConfig() == nil {
+		return CodesomeSubscriptionUsageSummary{}, fmt.Errorf("未找到 Codesome 配置")
+	}
+	client := newCodesomeClient(cfg)
+	subs, err := client.fetchSubscriptions(true)
+	if err != nil {
+		return CodesomeSubscriptionUsageSummary{}, err
+	}
+	return summarizeSubscriptions(subs), nil
+}
+
 // GetCodesomeKeyUsageStats returns aggregate usage stats for an inclusive date range.
 func GetCodesomeKeyUsageStats(cfg *config.Config, keyID int, startDate string, endDate string, forceUpdate bool) (*CodesomeUsageStats, error) {
 	if err := validateUsageStatsDateRange(keyID, startDate, endDate); err != nil {

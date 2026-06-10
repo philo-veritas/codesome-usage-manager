@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	usageTodayIncludeInactive bool
-	usageTodaySortByCost      bool
-	getCodesomeKeysDailyUsage = provider.GetCodesomeKeysDailyUsage
+	usageTodayIncludeInactive           bool
+	usageTodaySortByCost                bool
+	getCodesomeKeysDailyUsage           = provider.GetCodesomeKeysDailyUsage
+	getCodesomeSubscriptionUsageSummary = provider.GetCodesomeSubscriptionUsageSummary
 )
 
 type usageTodayResult struct {
@@ -76,12 +77,16 @@ func runUsageToday(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("查询今日用量失败: %w", err)
 	}
+	summary, err := getCodesomeSubscriptionUsageSummary(cfg)
+	if err != nil {
+		return fmt.Errorf("查询今日总余额失败: %w", err)
+	}
 
 	results := buildUsageTodayResults(targets, usageMap)
 	if usageTodaySortByCost {
 		sortUsageTodayResultsByCost(results)
 	}
-	printUsageTodayResults(os.Stdout, results)
+	printUsageTodayReport(os.Stdout, summary, results)
 	return nil
 }
 
@@ -102,6 +107,13 @@ func sortUsageTodayResultsByCost(results []usageTodayResult) {
 	sort.SliceStable(results, func(i, j int) bool {
 		return results[i].usage.TodayCost > results[j].usage.TodayCost
 	})
+}
+
+func printUsageTodayReport(writer io.Writer, summary provider.CodesomeSubscriptionUsageSummary, results []usageTodayResult) {
+	printSubscriptionUsageSummaryWith(summary, func(format string, args ...any) {
+		fmt.Fprintf(writer, format, args...)
+	})
+	printUsageTodayResults(writer, results)
 }
 
 func printUsageTodayResults(writer io.Writer, results []usageTodayResult) {
