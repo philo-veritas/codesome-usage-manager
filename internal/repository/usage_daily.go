@@ -84,6 +84,17 @@ ON CONFLICT(api_key_id, usage_date) DO UPDATE SET
 }
 
 func (r *UsageDailyRepository) Get(ctx context.Context, apiKeyID int64, usageDate string) (*UsageDaily, error) {
+	usage, err := r.Find(ctx, apiKeyID, usageDate)
+	if err != nil {
+		return nil, err
+	}
+	if usage == nil {
+		return nil, fmt.Errorf("usage daily not found: %w", sql.ErrNoRows)
+	}
+	return usage, nil
+}
+
+func (r *UsageDailyRepository) Find(ctx context.Context, apiKeyID int64, usageDate string) (*UsageDaily, error) {
 	var usage UsageDaily
 	if err := r.db.QueryRowContext(ctx, `
 SELECT
@@ -116,7 +127,7 @@ WHERE api_key_id = ? AND usage_date = ?
 		&usage.FetchedAt,
 	); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("usage daily not found: %w", err)
+			return nil, nil
 		}
 		return nil, fmt.Errorf("scan usage daily: %w", err)
 	}

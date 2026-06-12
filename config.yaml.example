@@ -29,6 +29,11 @@ feishu:
       # 工号: rich text/number-like field; uses value[0].text
       # 团队: text field; uses [0].text
       # 状态: option/text field; maps 生效->active, 禁用->inactive
+    usage:
+      # table_id: "tblusagexxx"
+      # Optional: restrict fallback ID lookup to a view; prefer a full usage view.
+      # view_id: "vewusagexxx"
+      # Usage sync writes: ID, 日期, 人员, 总Tokens, 实际成本USD.
 
 database:
   # Keep this path aligned with Docker volume mounts if you deploy with compose.

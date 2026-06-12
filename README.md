@@ -190,6 +190,12 @@ codesome sync usage --yesterday
 codesome sync usage --date 2026-05-28 --include-today
 ```
 
+When `feishu.bitable.usage.table_id` is configured, `sync usage` also upserts the synced rows to the Feishu Bitable usage table. The usage table must contain these fields: `ID`, `日期`, `人员`, `总Tokens`, and `实际成本USD`. `ID` uses `YYYY-MM-DD#codesome_key_id`; the local `feishu_usage_records` table caches the matching Bitable `record_id` for faster updates.
+
+Feishu usage sync only writes rows that have a local `feishu_open_id` and `total_tokens > 0`; rows without a matched Feishu person or without token usage are skipped.
+
+For already stored historical dates, `sync usage` reuses local `usage_daily` rows and skips Codesome usage requests. Pass `--force-update` to refresh stored dates. Today is skipped by default; when explicitly included with `--include-today`, it is always refreshed because same-day usage can still change.
+
 Generate monthly reports:
 
 ```bash

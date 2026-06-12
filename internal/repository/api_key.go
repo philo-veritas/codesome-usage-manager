@@ -42,6 +42,7 @@ type APIKeyUsageTarget struct {
 	CodesomeKeyID int
 	Name          string
 	UserStatus    string
+	FeishuOpenID  string
 }
 
 type APIKeySwitchTarget struct {
@@ -255,7 +256,8 @@ SELECT
   api_keys.id,
   api_keys.codesome_key_id,
   api_keys.name,
-  users.status
+  users.status,
+  users.feishu_open_id
 FROM api_keys
 JOIN users ON api_keys.user_id = users.id
 WHERE users.status != ?
@@ -269,8 +271,12 @@ ORDER BY api_keys.id
 	var result []APIKeyUsageTarget
 	for rows.Next() {
 		var target APIKeyUsageTarget
-		if err := rows.Scan(&target.ID, &target.CodesomeKeyID, &target.Name, &target.UserStatus); err != nil {
+		var feishuOpenID sql.NullString
+		if err := rows.Scan(&target.ID, &target.CodesomeKeyID, &target.Name, &target.UserStatus, &feishuOpenID); err != nil {
 			return nil, fmt.Errorf("scan api key usage target: %w", err)
+		}
+		if feishuOpenID.Valid {
+			target.FeishuOpenID = feishuOpenID.String
 		}
 		result = append(result, target)
 	}
@@ -293,7 +299,8 @@ SELECT
   api_keys.id,
   api_keys.codesome_key_id,
   api_keys.name,
-  users.status
+  users.status,
+  users.feishu_open_id
 FROM api_keys
 JOIN users ON api_keys.user_id = users.id
 WHERE `+strings.Join(conditions, " AND ")+`
@@ -307,8 +314,12 @@ ORDER BY api_keys.id
 	var result []APIKeyUsageTarget
 	for rows.Next() {
 		var target APIKeyUsageTarget
-		if err := rows.Scan(&target.ID, &target.CodesomeKeyID, &target.Name, &target.UserStatus); err != nil {
+		var feishuOpenID sql.NullString
+		if err := rows.Scan(&target.ID, &target.CodesomeKeyID, &target.Name, &target.UserStatus, &feishuOpenID); err != nil {
 			return nil, fmt.Errorf("scan api key daily usage target: %w", err)
+		}
+		if feishuOpenID.Valid {
+			target.FeishuOpenID = feishuOpenID.String
 		}
 		result = append(result, target)
 	}

@@ -103,6 +103,23 @@ DROP INDEX IF EXISTS idx_users_feishu_open_id;
 CREATE UNIQUE INDEX idx_users_feishu_open_id ON users(feishu_open_id) WHERE feishu_open_id IS NOT NULL;
 `,
 	},
+	{
+		Version: 4,
+		Name:    "add_feishu_usage_records",
+		SQL: `
+CREATE TABLE feishu_usage_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  app_token TEXT NOT NULL,
+  table_id TEXT NOT NULL,
+  sync_id TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  synced_at TEXT NOT NULL,
+  UNIQUE(app_token, table_id, sync_id)
+);
+
+CREATE INDEX idx_feishu_usage_records_record_id ON feishu_usage_records(record_id);
+`,
+	},
 }
 
 func Migrate(ctx context.Context, database *sql.DB) error {

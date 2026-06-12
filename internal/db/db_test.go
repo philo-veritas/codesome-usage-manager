@@ -27,6 +27,7 @@ func TestInitCreatesSchema(t *testing.T) {
 		"users",
 		"api_keys",
 		"usage_daily",
+		"feishu_usage_records",
 		"sync_runs",
 	} {
 		if !tableExists(t, database, table) {

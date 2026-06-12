@@ -90,6 +90,41 @@ func TestResolveSyncUsageDatesRejectsInvalidSelectors(t *testing.T) {
 	}
 }
 
+func TestBuildUsageSyncOptionsReusesExistingByDefault(t *testing.T) {
+	restoreNow := setSyncUsageNow("2026-06-12")
+	defer restoreNow()
+
+	restoreFlags := setSyncUsageDateFlags(syncUsageDateFlagState{date: "2026-06-11"})
+	defer restoreFlags()
+
+	options := buildUsageSyncOptions([]string{"2026-06-11"})
+	if !options.ReuseExisting {
+		t.Fatal("expected usage sync to reuse existing rows by default")
+	}
+	if options.ForceUpdate {
+		t.Fatal("expected force update to follow flag default")
+	}
+	if options.ForceUpdateDates["2026-06-11"] {
+		t.Fatalf("expected past date not to be force-updated: %+v", options.ForceUpdateDates)
+	}
+}
+
+func TestBuildUsageSyncOptionsForceUpdatesIncludedToday(t *testing.T) {
+	restoreNow := setSyncUsageNow("2026-06-12")
+	defer restoreNow()
+
+	restoreFlags := setSyncUsageDateFlags(syncUsageDateFlagState{date: "2026-06-12", includeToday: true})
+	defer restoreFlags()
+
+	options := buildUsageSyncOptions([]string{"2026-06-12"})
+	if !options.ReuseExisting {
+		t.Fatal("expected usage sync to reuse existing rows where allowed")
+	}
+	if !options.ForceUpdateDates["2026-06-12"] {
+		t.Fatalf("expected included today to be force-updated: %+v", options.ForceUpdateDates)
+	}
+}
+
 type syncUsageDateFlagState struct {
 	date         string
 	from         string

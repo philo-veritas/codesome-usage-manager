@@ -52,12 +52,18 @@ type FeishuConfig struct {
 type FeishuBitable struct {
 	AppToken string           `yaml:"app_token"`
 	Users    FeishuUsersTable `yaml:"users"`
+	Usage    FeishuUsageTable `yaml:"usage"`
 }
 
 type FeishuUsersTable struct {
 	TableID string           `yaml:"table_id"`
 	ViewID  string           `yaml:"view_id"`
 	Fields  FeishuUserFields `yaml:"fields"`
+}
+
+type FeishuUsageTable struct {
+	TableID string `yaml:"table_id"`
+	ViewID  string `yaml:"view_id"`
 }
 
 type FeishuUserFields struct {

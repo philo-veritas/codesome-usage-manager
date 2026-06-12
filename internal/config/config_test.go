@@ -87,6 +87,9 @@ feishu:
     app_token: "app_token"
     users:
       table_id: "tbl1"
+    usage:
+      table_id: "tbl_usage"
+      view_id: "vew_usage"
 `), &cfg); err != nil {
 		t.Fatalf("failed to parse feishu config: %v", err)
 	}
@@ -100,5 +103,8 @@ feishu:
 	}
 	if feishu.Bitable.AppToken != "app_token" || feishu.Bitable.Users.TableID != "tbl1" {
 		t.Fatalf("unexpected bitable location: %+v", feishu.Bitable)
+	}
+	if feishu.Bitable.Usage.TableID != "tbl_usage" || feishu.Bitable.Usage.ViewID != "vew_usage" {
+		t.Fatalf("unexpected usage bitable location: %+v", feishu.Bitable.Usage)
 	}
 }

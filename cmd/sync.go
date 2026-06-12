@@ -12,6 +12,7 @@ import (
 
 	"codesome-usage-manager/internal/config"
 	"codesome-usage-manager/internal/provider"
+	"codesome-usage-manager/internal/repository"
 	usersync "codesome-usage-manager/internal/sync"
 )
 
@@ -159,15 +160,42 @@ func runSyncUsage(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	results, err := usersync.NewUsageSyncer(database, codesomeUsageStatsService{cfg: cfg}).SyncUsage(ctx, usersync.UsageSyncOptions{
-		Dates:       dates,
-		ForceUpdate: syncUsageForceUpdate,
-	})
+	results, err := usersync.NewUsageSyncer(database, codesomeUsageStatsService{cfg: cfg}).SyncUsage(ctx, buildUsageSyncOptions(dates))
 	if err != nil {
 		return err
 	}
 	printSyncUsageResults(results)
+	if usersync.HasFeishuUsageConfig(cfg.GetFeishuConfig()) {
+		client, err := provider.NewFeishuClient(cfg)
+		if err != nil {
+			return err
+		}
+		feishuResults, err := usersync.SyncUsageToFeishu(ctx, cfg.GetFeishuConfig(), client, repository.NewFeishuUsageRecordRepository(database), results)
+		printFeishuUsageResults(feishuResults)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func buildUsageSyncOptions(dates []string) usersync.UsageSyncOptions {
+	options := usersync.UsageSyncOptions{
+		Dates:         dates,
+		ForceUpdate:   syncUsageForceUpdate,
+		ReuseExisting: true,
+	}
+	if syncUsageIncludeToday {
+		today := formatSyncUsageDate(truncateDate(syncUsageNow()))
+		for _, date := range dates {
+			if date != today {
+				continue
+			}
+			options.ForceUpdateDates = map[string]bool{today: true}
+			break
+		}
+	}
+	return options
 }
 
 type codesomeUsageStatsService struct {
@@ -290,6 +318,23 @@ func printSyncUsageResults(results []usersync.UsageSyncResult) {
 			result.TotalRequests,
 			result.TotalTokens,
 			result.ActualCost,
+		)
+	}
+	w.Flush()
+}
+
+func printFeishuUsageResults(results []usersync.FeishuUsageSyncResult) {
+	if len(results) == 0 {
+		return
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "FEISHU_ID\tACTION\tRECORD_ID\tMESSAGE")
+	for _, result := range results {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			result.ID,
+			result.Action,
+			result.RecordID,
+			result.Message,
 		)
 	}
 	w.Flush()

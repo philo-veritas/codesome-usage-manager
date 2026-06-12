@@ -34,6 +34,10 @@ type FeishuBitableRecord struct {
 	Fields   map[string]json.RawMessage `json:"fields"`
 }
 
+type feishuBitableRecordResponse struct {
+	Record FeishuBitableRecord `json:"record"`
+}
+
 type FeishuMessageResult struct {
 	MessageID string `json:"message_id"`
 }
@@ -136,6 +140,42 @@ func (c *FeishuClient) SearchBitableRecords(ctx context.Context, appToken string
 		}
 		pageToken = data.PageToken
 	}
+}
+
+func (c *FeishuClient) CreateBitableRecord(ctx context.Context, appToken string, tableID string, fields map[string]any) (*FeishuBitableRecord, error) {
+	if appToken == "" || tableID == "" {
+		return nil, fmt.Errorf("feishu bitable app_token and table_id are required")
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]any{"fields": fields}
+	path := fmt.Sprintf("/bitable/v1/apps/%s/tables/%s/records?user_id_type=open_id", url.PathEscape(appToken), url.PathEscape(tableID))
+	var data feishuBitableRecordResponse
+	if err := c.request(ctx, http.MethodPost, path, token, body, &data); err != nil {
+		return nil, err
+	}
+	return &data.Record, nil
+}
+
+func (c *FeishuClient) UpdateBitableRecord(ctx context.Context, appToken string, tableID string, recordID string, fields map[string]any) (*FeishuBitableRecord, error) {
+	if appToken == "" || tableID == "" || recordID == "" {
+		return nil, fmt.Errorf("feishu bitable app_token, table_id, and record_id are required")
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]any{"fields": fields}
+	path := fmt.Sprintf("/bitable/v1/apps/%s/tables/%s/records/%s?user_id_type=open_id", url.PathEscape(appToken), url.PathEscape(tableID), url.PathEscape(recordID))
+	var data feishuBitableRecordResponse
+	if err := c.request(ctx, http.MethodPut, path, token, body, &data); err != nil {
+		return nil, err
+	}
+	return &data.Record, nil
 }
 
 func (c *FeishuClient) SendTextMessage(ctx context.Context, openID string, text string) (*FeishuMessageResult, error) {

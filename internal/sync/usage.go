@@ -20,8 +20,10 @@ type UsageSyncer struct {
 }
 
 type UsageSyncOptions struct {
-	Dates       []string
-	ForceUpdate bool
+	Dates            []string
+	ForceUpdate      bool
+	ReuseExisting    bool
+	ForceUpdateDates map[string]bool
 }
 
 type UsageSyncResult struct {
@@ -29,6 +31,7 @@ type UsageSyncResult struct {
 	LocalAPIKeyID int64
 	CodesomeKeyID int
 	KeyName       string
+	FeishuOpenID  string
 	TotalRequests int64
 	TotalTokens   int64
 	ActualCost    float64
@@ -58,7 +61,18 @@ func (s *UsageSyncer) SyncUsage(ctx context.Context, options UsageSyncOptions) (
 	results := make([]UsageSyncResult, 0, len(targets)*len(options.Dates))
 	for _, target := range targets {
 		for _, date := range options.Dates {
-			stats, err := s.stats.GetUsageStats(ctx, target.CodesomeKeyID, date, options.ForceUpdate)
+			forceUpdate := options.ForceUpdate || options.ForceUpdateDates[date]
+			if options.ReuseExisting && !forceUpdate {
+				stored, err := s.usage.Find(ctx, target.ID, date)
+				if err != nil {
+					return nil, err
+				}
+				if stored != nil {
+					results = append(results, usageSyncResultFromStored(target, stored))
+					continue
+				}
+			}
+			stats, err := s.stats.GetUsageStats(ctx, target.CodesomeKeyID, date, forceUpdate)
 			if err != nil {
 				return nil, fmt.Errorf("sync usage key %d date %s: %w", target.CodesomeKeyID, date, err)
 			}
@@ -69,16 +83,21 @@ func (s *UsageSyncer) SyncUsage(ctx context.Context, options UsageSyncOptions) (
 			if err != nil {
 				return nil, err
 			}
-			results = append(results, UsageSyncResult{
-				UsageDate:     date,
-				LocalAPIKeyID: target.ID,
-				CodesomeKeyID: target.CodesomeKeyID,
-				KeyName:       target.Name,
-				TotalRequests: stored.TotalRequests,
-				TotalTokens:   stored.TotalTokens,
-				ActualCost:    stored.TotalActualCost,
-			})
+			results = append(results, usageSyncResultFromStored(target, stored))
 		}
 	}
 	return results, nil
+}
+
+func usageSyncResultFromStored(target repository.APIKeyUsageTarget, stored *repository.UsageDaily) UsageSyncResult {
+	return UsageSyncResult{
+		UsageDate:     stored.UsageDate,
+		LocalAPIKeyID: target.ID,
+		CodesomeKeyID: target.CodesomeKeyID,
+		KeyName:       target.Name,
+		FeishuOpenID:  target.FeishuOpenID,
+		TotalRequests: stored.TotalRequests,
+		TotalTokens:   stored.TotalTokens,
+		ActualCost:    stored.TotalActualCost,
+	}
 }
