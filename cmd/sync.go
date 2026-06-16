@@ -59,7 +59,7 @@ func init() {
 
 	syncUsersCmd.Flags().BoolVar(&syncUsersDryRun, "dry-run", false, "只输出同步计划，不创建或更新 Codesome key")
 	syncUsersCmd.Flags().StringVar(&syncUsersEmployeeNo, "employee-no", "", "只同步指定员工")
-	syncUsersCmd.Flags().BoolVar(&syncUsersFull, "full", false, "全量收敛所有匹配的本地用户，重新应用期望状态")
+	syncUsersCmd.Flags().BoolVar(&syncUsersFull, "full", false, "对所有匹配的现有 key 调用远程更新，仅用于修正远端漂移")
 	syncCmd.AddCommand(syncUsersCmd)
 
 	syncUsageCmd.Flags().StringVar(&syncUsageDate, "date", "", "同步指定日期 YYYY-MM-DD")

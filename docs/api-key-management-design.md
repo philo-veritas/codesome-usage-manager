@@ -277,7 +277,7 @@ codesome sync users --full
 
 对于未设置个人 `codesome_group_id` 的 active user，期望 group 仍按运行时可用余额最多的 group 计算；默认模式会读取 Codesome subscription 来判断 group 是否需要更新，但只对有差异的 key 调用更新接口。
 
-`--full` 会全量收敛匹配到的本地 user，重新应用所有现有 key 的期望状态。它用于修正远端被人工修改但本地未变化的漂移。
+`--full` 会对匹配到的所有现有 key 调用 Codesome 远程更新接口，重新应用本地期望状态；重复执行仍然会全量远程更新。它只用于修正远端被人工修改但本地未变化的漂移，日常同步应使用不带 `--full` 的默认增量模式。
 
 `--dry-run` 只输出计划，不创建或更新 Codesome key；为准确预览运行时 group 选择，它可能读取 Codesome subscription。
 

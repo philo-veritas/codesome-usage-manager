@@ -150,6 +150,8 @@ codesome sync users
 codesome sync users --employee-no E12345
 ```
 
+The default `sync users` mode is incremental. Use it for routine syncs; it creates missing active-user keys and updates keys only when local state changed or fields differ. `codesome sync users --full` intentionally calls the remote update API for every matched existing key, so reserve it for repairing remote drift after manual Codesome changes.
+
 When `sync users` creates or updates a Codesome key for a user without a manual group override, it selects the active subscription group with the most remaining daily balance, matching the auto-switch selection rule. `codesome.default_group_id` remains a fallback when that live selection is unavailable.
 
 Send locally stored raw API keys to Feishu users:
