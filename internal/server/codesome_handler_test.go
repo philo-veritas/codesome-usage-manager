@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -277,14 +278,22 @@ func TestSwitchGroupHandlerMapsProviderError(t *testing.T) {
 
 func TestSwitchOnExhaustedHandlerReturnsProviderResult(t *testing.T) {
 	original := switchCodesomeKeyGroupOnExhausted
+	originalPolicyLoader := loadPayAsYouGoFallbackPolicy
 	defer func() { switchCodesomeKeyGroupOnExhausted = original }()
+	defer func() { loadPayAsYouGoFallbackPolicy = originalPolicyLoader }()
 
-	switchCodesomeKeyGroupOnExhausted = func(cfg *config.Config, keyID int, minRemainingUSD float64) (*provider.CodesomeGroupSwitchResult, error) {
+	loadPayAsYouGoFallbackPolicy = func(ctx context.Context, cfg *config.Config) (provider.PayAsYouGoFallbackPolicy, error) {
+		return provider.PayAsYouGoFallbackPolicy{GroupID: 3, MinSubscriptionDailyLimitUSD: 60, RecentDailyUsageP80USD: 80}, nil
+	}
+	switchCodesomeKeyGroupOnExhausted = func(cfg *config.Config, keyID int, minRemainingUSD float64, policy provider.PayAsYouGoFallbackPolicy) (*provider.CodesomeGroupSwitchResult, error) {
 		if keyID != 6732 {
 			t.Fatalf("expected keyID 6732, got %d", keyID)
 		}
 		if minRemainingUSD != 0 {
 			t.Fatalf("expected minRemainingUSD 0, got %.2f", minRemainingUSD)
+		}
+		if policy.RecentDailyUsageP80USD != 80 {
+			t.Fatalf("expected policy P80 80, got %.2f", policy.RecentDailyUsageP80USD)
 		}
 		return &provider.CodesomeGroupSwitchResult{
 			KeyID:    keyID,

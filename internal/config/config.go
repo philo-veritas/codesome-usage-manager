@@ -9,9 +9,12 @@ import (
 )
 
 const (
-	DefaultCodesomeBaseURL = "https://v3.codesome.cn"
-	DefaultFeishuBaseURL   = "https://open.feishu.cn/open-apis"
-	DefaultDatabasePath    = "codesome-manager.db"
+	DefaultCodesomeBaseURL                        = "https://v3.codesome.cn"
+	DefaultFeishuBaseURL                          = "https://open.feishu.cn/open-apis"
+	DefaultDatabasePath                           = "codesome-manager.db"
+	DefaultPayAsYouGoGroupID                      = 3
+	DefaultPayAsYouGoMinSubscriptionDailyLimitUSD = 60
+	DefaultPayAsYouGoHistoryDays                  = 21
 )
 
 type LoginCredentials struct {
@@ -26,10 +29,13 @@ type CodesomeApiKeyId struct {
 }
 
 type CodesomeConfig struct {
-	BaseURL        string             `yaml:"base_url"`
-	Login          *LoginCredentials  `yaml:"login"`
-	DefaultGroupID int                `yaml:"default_group_id"`
-	ApiKeyIDs      []CodesomeApiKeyId `yaml:"api_key_ids"`
+	BaseURL                                string             `yaml:"base_url"`
+	Login                                  *LoginCredentials  `yaml:"login"`
+	DefaultGroupID                         int                `yaml:"default_group_id"`
+	PayAsYouGoGroupID                      int                `yaml:"pay_as_you_go_group_id"`
+	PayAsYouGoMinSubscriptionDailyLimitUSD float64            `yaml:"pay_as_you_go_min_subscription_daily_limit_usd"`
+	PayAsYouGoHistoryDays                  int                `yaml:"pay_as_you_go_history_days"`
+	ApiKeyIDs                              []CodesomeApiKeyId `yaml:"api_key_ids"`
 }
 
 type Config struct {
@@ -122,6 +128,15 @@ func (c *CodesomeConfig) normalize() {
 		c.BaseURL = DefaultCodesomeBaseURL
 	}
 	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
+	if c.PayAsYouGoGroupID == 0 {
+		c.PayAsYouGoGroupID = DefaultPayAsYouGoGroupID
+	}
+	if c.PayAsYouGoMinSubscriptionDailyLimitUSD == 0 {
+		c.PayAsYouGoMinSubscriptionDailyLimitUSD = DefaultPayAsYouGoMinSubscriptionDailyLimitUSD
+	}
+	if c.PayAsYouGoHistoryDays == 0 {
+		c.PayAsYouGoHistoryDays = DefaultPayAsYouGoHistoryDays
+	}
 }
 
 func (c *FeishuConfig) normalize() {

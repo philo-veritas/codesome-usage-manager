@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"codesome-usage-manager/internal/config"
@@ -144,6 +145,36 @@ func TestPlanSwitchOnExhaustedSwitchesWhenCurrentExhausted(t *testing.T) {
 	}
 }
 
+func TestPlanSwitchOnExhaustedSwitchesWhenCurrentSubscriptionMissing(t *testing.T) {
+	subs := []CodesomeSubscription{
+		testSubscription(78, "available", 420, 0, "active"),
+		testSubscription(70, "smaller", 180, 0, "active"),
+	}
+
+	result, target, err := planSwitchOnExhausted(10315, 76, "480 | 月卡2", subs, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target == nil {
+		t.Fatal("expected switch target")
+	}
+	if !result.Switched {
+		t.Fatal("expected switch")
+	}
+	if result.FromGroupID != 76 {
+		t.Fatalf("expected from group 76, got %d", result.FromGroupID)
+	}
+	if result.CurrentRemainingUSD != 0 {
+		t.Fatalf("expected current remaining 0, got %.2f", result.CurrentRemainingUSD)
+	}
+	if result.ToGroupID != 78 {
+		t.Fatalf("expected target group 78, got %d", result.ToGroupID)
+	}
+	if !strings.Contains(result.Message, "没有 active subscription") {
+		t.Fatalf("expected missing subscription message, got %q", result.Message)
+	}
+}
+
 func TestPlanSwitchOnExhaustedErrorsWithoutAvailableTarget(t *testing.T) {
 	subs := []CodesomeSubscription{
 		testSubscription(64, "current", 120, 120, "active"),
@@ -264,6 +295,119 @@ func TestPlanSwitchOnExhaustedDoesNotSwitchWhenEqualThreshold(t *testing.T) {
 	}
 	if result.CurrentRemainingUSD != 10 {
 		t.Fatalf("expected current remaining 10, got %.2f", result.CurrentRemainingUSD)
+	}
+}
+
+func TestPlanSwitchOnExhaustedFallsBackToPayAsYouGoWhenSubscriptionsExhausted(t *testing.T) {
+	subs := []CodesomeSubscription{
+		testSubscription(64, "current", 60, 60, "active"),
+	}
+	policy := PayAsYouGoFallbackPolicy{
+		GroupID:                      3,
+		MinSubscriptionDailyLimitUSD: 60,
+	}
+
+	result, target, err := planSwitchOnExhaustedWithPayAsYouGo(6732, 64, "current", subs, 0, policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target == nil {
+		t.Fatal("expected pay as you go target")
+	}
+	if !target.PayAsYouGo || target.GroupID != 3 {
+		t.Fatalf("unexpected target: %+v", target)
+	}
+	if !result.Switched || !result.ToPayAsYouGo || result.ToGroupID != 3 {
+		t.Fatalf("expected pay as you go switch, got %+v", result)
+	}
+}
+
+func TestPlanSwitchOnExhaustedBlocksPayAsYouGoWhenSubscriptionLimitIsTooLow(t *testing.T) {
+	subs := []CodesomeSubscription{
+		testSubscription(64, "current", 60, 60, "active"),
+	}
+	policy := PayAsYouGoFallbackPolicy{
+		GroupID:                      3,
+		MinSubscriptionDailyLimitUSD: 60,
+		RecentDailyUsageP80USD:       72,
+	}
+
+	result, target, err := planSwitchOnExhaustedWithPayAsYouGo(6732, 64, "current", subs, 0, policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target != nil {
+		t.Fatal("expected no pay as you go target")
+	}
+	if result.Switched {
+		t.Fatalf("expected no switch, got %+v", result)
+	}
+	if !strings.Contains(result.Message, "保护阈值 $72.00") {
+		t.Fatalf("expected protection threshold message, got %q", result.Message)
+	}
+}
+
+func TestPlanSwitchOnExhaustedDoesNotFallbackToPayAsYouGoBeforeExhausted(t *testing.T) {
+	subs := []CodesomeSubscription{
+		testSubscription(64, "current", 60, 55, "active"),
+	}
+	policy := PayAsYouGoFallbackPolicy{
+		GroupID:                      3,
+		MinSubscriptionDailyLimitUSD: 60,
+	}
+
+	result, target, err := planSwitchOnExhaustedWithPayAsYouGo(6732, 64, "current", subs, 10, policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target != nil {
+		t.Fatal("expected no pay as you go target")
+	}
+	if result.Switched {
+		t.Fatalf("expected no switch, got %+v", result)
+	}
+	if !strings.Contains(result.Message, "没有剩余额度更高的可切换 group") {
+		t.Fatalf("expected active subscription message, got %q", result.Message)
+	}
+}
+
+func TestPlanSwitchOnExhaustedIgnoresPayAsYouGoHistoryErrorWhenSubscriptionTargetExists(t *testing.T) {
+	subs := []CodesomeSubscription{
+		testSubscription(64, "current", 60, 60, "active"),
+		testSubscription(60, "backup", 60, 10, "active"),
+	}
+	policy := PayAsYouGoFallbackPolicy{
+		GroupID:          3,
+		HistoryLoadError: "database is locked",
+	}
+
+	result, target, err := planSwitchOnExhaustedWithPayAsYouGo(6732, 64, "current", subs, 0, policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if target == nil || target.GroupID != 60 {
+		t.Fatalf("expected active subscription target, got %+v", target)
+	}
+	if result.ToPayAsYouGo {
+		t.Fatalf("did not expect pay as you go target: %+v", result)
+	}
+}
+
+func TestPlanSwitchOnExhaustedBlocksPayAsYouGoWhenHistoryUnavailable(t *testing.T) {
+	subs := []CodesomeSubscription{
+		testSubscription(64, "current", 60, 60, "active"),
+	}
+	policy := PayAsYouGoFallbackPolicy{
+		GroupID:          3,
+		HistoryLoadError: "database is locked",
+	}
+
+	_, _, err := planSwitchOnExhaustedWithPayAsYouGo(6732, 64, "current", subs, 0, policy)
+	if err == nil {
+		t.Fatal("expected history load error")
+	}
+	if !strings.Contains(err.Error(), "读取按量付费保护历史用量失败") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

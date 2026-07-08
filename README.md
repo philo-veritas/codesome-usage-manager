@@ -280,6 +280,14 @@ Run the state-changing auto switcher for all Codesome API keys:
 go run . auto-switch --min-remaining 10 --min-interval 2m --max-interval 2h
 ```
 
+When all active subscription groups are exhausted, `switch-on-exhausted` and `auto-switch`
+can fall back to the configured pay-as-you-go group. The fallback uses
+`codesome.pay_as_you_go_group_id` (default `3`) and only runs when the active subscription
+daily limit is at least `max(pay_as_you_go_min_subscription_daily_limit_usd, recent usage P80)`.
+The default minimum is `$60/day`; recent usage P80 is calculated from local `usage_daily` over
+`pay_as_you_go_history_days` (default `21`). This keeps pay-as-you-go for spikes instead of
+masking a subscription capacity shortfall.
+
 ## HTTP API
 
 Start the server:
@@ -351,6 +359,9 @@ codesome:
     email: "your-email@example.com"
     password: "your-password"
   default_group_id: 51
+  pay_as_you_go_group_id: 3
+  pay_as_you_go_min_subscription_daily_limit_usd: 60
+  pay_as_you_go_history_days: 21
 
 feishu:
   app_id: "cli_xxx"

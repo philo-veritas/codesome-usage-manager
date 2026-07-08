@@ -34,6 +34,11 @@ type MonthlyReportRow struct {
 	TotalActualCost float64
 }
 
+type DailyActualCost struct {
+	UsageDate       string
+	TotalActualCost float64
+}
+
 type UsageDailyRepository struct {
 	db *sql.DB
 }
@@ -197,6 +202,45 @@ ORDER BY teams.code, users.employee_no`
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate monthly report rows: %w", err)
+	}
+	return result, nil
+}
+
+func (r *UsageDailyRepository) RecentDailyActualCosts(ctx context.Context, beforeDate string, days int) ([]DailyActualCost, error) {
+	if days <= 0 {
+		return nil, fmt.Errorf("days must be positive")
+	}
+	end, err := time.Parse("2006-01-02", beforeDate)
+	if err != nil {
+		return nil, fmt.Errorf("before date must be YYYY-MM-DD: %s", beforeDate)
+	}
+	startDate := end.AddDate(0, 0, -days).Format("2006-01-02")
+
+	rows, err := r.db.QueryContext(ctx, `
+SELECT
+  usage_date,
+  COALESCE(SUM(total_actual_cost), 0)
+FROM usage_daily
+WHERE usage_date >= ?
+  AND usage_date < ?
+GROUP BY usage_date
+ORDER BY usage_date
+`, startDate, beforeDate)
+	if err != nil {
+		return nil, fmt.Errorf("query recent daily actual costs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []DailyActualCost
+	for rows.Next() {
+		var row DailyActualCost
+		if err := rows.Scan(&row.UsageDate, &row.TotalActualCost); err != nil {
+			return nil, fmt.Errorf("scan recent daily actual cost: %w", err)
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate recent daily actual costs: %w", err)
 	}
 	return result, nil
 }

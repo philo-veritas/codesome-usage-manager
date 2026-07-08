@@ -165,3 +165,68 @@ func TestUsageDailyRepositoryMonthlyReportKeepsDeletedUserHistory(t *testing.T) 
 		t.Fatalf("expected deleted user history, got %+v", rows)
 	}
 }
+
+func TestUsageDailyRepositoryRecentDailyActualCosts(t *testing.T) {
+	_, userRepo := newTestUserRepositories(t)
+	ctx := context.Background()
+	alice, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E12345", Name: "Alice"})
+	if err != nil {
+		t.Fatalf("create alice: %v", err)
+	}
+	bob, err := userRepo.Create(ctx, CreateUserParams{EmployeeNo: "E54321", Name: "Bob"})
+	if err != nil {
+		t.Fatalf("create bob: %v", err)
+	}
+	keyRepo := NewAPIKeyRepository(userRepo.db)
+	aliceKey, err := keyRepo.Create(ctx, CreateAPIKeyParams{
+		UserID:        alice.ID,
+		CodesomeKeyID: 6732,
+		Name:          "Alice",
+		Status:        APIKeyStatusActive,
+		GroupID:       51,
+	})
+	if err != nil {
+		t.Fatalf("create alice key: %v", err)
+	}
+	bobKey, err := keyRepo.Create(ctx, CreateAPIKeyParams{
+		UserID:        bob.ID,
+		CodesomeKeyID: 6733,
+		Name:          "Bob",
+		Status:        APIKeyStatusActive,
+		GroupID:       51,
+	})
+	if err != nil {
+		t.Fatalf("create bob key: %v", err)
+	}
+
+	usageRepo := NewUsageDailyRepository(userRepo.db)
+	if _, err := usageRepo.Upsert(ctx, aliceKey.ID, "2026-05-09", provider.CodesomeUsageStats{TotalActualCost: 99}); err != nil {
+		t.Fatalf("upsert outside usage: %v", err)
+	}
+	if _, err := usageRepo.Upsert(ctx, aliceKey.ID, "2026-05-10", provider.CodesomeUsageStats{TotalActualCost: 1.25}); err != nil {
+		t.Fatalf("upsert alice usage: %v", err)
+	}
+	if _, err := usageRepo.Upsert(ctx, bobKey.ID, "2026-05-10", provider.CodesomeUsageStats{TotalActualCost: 2.75}); err != nil {
+		t.Fatalf("upsert bob usage: %v", err)
+	}
+	if _, err := usageRepo.Upsert(ctx, aliceKey.ID, "2026-05-11", provider.CodesomeUsageStats{TotalActualCost: 5}); err != nil {
+		t.Fatalf("upsert next usage: %v", err)
+	}
+	if _, err := usageRepo.Upsert(ctx, aliceKey.ID, "2026-05-12", provider.CodesomeUsageStats{TotalActualCost: 100}); err != nil {
+		t.Fatalf("upsert before-date usage: %v", err)
+	}
+
+	rows, err := usageRepo.RecentDailyActualCosts(ctx, "2026-05-12", 2)
+	if err != nil {
+		t.Fatalf("recent daily actual costs: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected two rows, got %+v", rows)
+	}
+	if rows[0].UsageDate != "2026-05-10" || rows[0].TotalActualCost != 4 {
+		t.Fatalf("unexpected first row: %+v", rows[0])
+	}
+	if rows[1].UsageDate != "2026-05-11" || rows[1].TotalActualCost != 5 {
+		t.Fatalf("unexpected second row: %+v", rows[1])
+	}
+}

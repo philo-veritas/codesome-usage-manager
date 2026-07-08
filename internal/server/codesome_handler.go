@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/payg"
 	"codesome-usage-manager/internal/provider"
 )
 
 var (
 	switchCodesomeKeyGroup            = provider.SwitchCodesomeKeyGroup
-	switchCodesomeKeyGroupOnExhausted = provider.SwitchCodesomeKeyGroupOnExhausted
+	switchCodesomeKeyGroupOnExhausted = provider.SwitchCodesomeKeyGroupOnExhaustedWithPayAsYouGoPolicy
+	loadPayAsYouGoFallbackPolicy      = payg.LoadFallbackPolicy
 	createCodesomeKey                 = provider.CreateCodesomeKey
 	updateCodesomeKey                 = provider.UpdateCodesomeKey
 	fetchCodesomeUsage                = provider.FetchCodesomeUsage
@@ -319,7 +321,13 @@ func SwitchOnExhaustedHandler(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		result, err := switchCodesomeKeyGroupOnExhausted(cfg, keyID, 0)
+		policy, err := loadPayAsYouGoFallbackPolicy(r.Context(), cfg)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		result, err := switchCodesomeKeyGroupOnExhausted(cfg, keyID, 0, policy)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

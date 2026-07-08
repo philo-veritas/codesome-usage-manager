@@ -84,6 +84,7 @@ type CodesomeGroupSwitchResult struct {
 	FromGroupName       string  `json:"from_group_name,omitempty"`
 	ToGroupID           int     `json:"to_group_id,omitempty"`
 	ToGroupName         string  `json:"to_group_name,omitempty"`
+	ToPayAsYouGo        bool    `json:"to_pay_as_you_go,omitempty"`
 	CurrentRemainingUSD float64 `json:"current_remaining_usd,omitempty"`
 	TargetRemainingUSD  float64 `json:"target_remaining_usd,omitempty"`
 	Message             string  `json:"message"`
@@ -99,6 +100,19 @@ type CodesomeGroupSwitchBatchResult struct {
 type CodesomeSubscriptionUsageSummary struct {
 	RemainingUSD float64 `json:"remaining_usd"`
 	LimitUSD     float64 `json:"limit_usd"`
+}
+
+type PayAsYouGoFallbackPolicy struct {
+	GroupID                      int
+	MinSubscriptionDailyLimitUSD float64
+	RecentDailyUsageP80USD       float64
+	HistoryLoadError             string
+}
+
+type groupSwitchTarget struct {
+	GroupID      int
+	PayAsYouGo   bool
+	Subscription *CodesomeSubscription
 }
 
 type codesomeKeysPage struct {
@@ -565,6 +579,14 @@ func summarizeSubscriptions(subs []CodesomeSubscription) CodesomeSubscriptionUsa
 	return summary
 }
 
+func (p PayAsYouGoFallbackPolicy) requiredSubscriptionDailyLimitUSD() float64 {
+	required := math.Max(p.MinSubscriptionDailyLimitUSD, 0)
+	if p.RecentDailyUsageP80USD > required {
+		required = p.RecentDailyUsageP80USD
+	}
+	return required
+}
+
 func activeSubscriptionForGroup(subs []CodesomeSubscription, groupID int) (*CodesomeSubscription, float64, bool) {
 	for i := range subs {
 		if subs[i].Status != "active" || subs[i].Group == nil || subs[i].Group.ID != groupID {
@@ -615,6 +637,16 @@ func bestSubscription(subs []CodesomeSubscription) (*CodesomeSubscription, float
 	return best, bestRemaining, best != nil
 }
 
+func activeSubscriptionSwitchTarget(sub *CodesomeSubscription) *groupSwitchTarget {
+	if sub == nil || sub.Group == nil {
+		return nil
+	}
+	return &groupSwitchTarget{
+		GroupID:      sub.Group.ID,
+		Subscription: sub,
+	}
+}
+
 func planSwitchOnExhausted(
 	keyID int,
 	currentGroupID int,
@@ -622,6 +654,21 @@ func planSwitchOnExhausted(
 	subs []CodesomeSubscription,
 	minRemainingUSD float64,
 ) (*CodesomeGroupSwitchResult, *CodesomeSubscription, error) {
+	result, target, err := planSwitchOnExhaustedWithPayAsYouGo(keyID, currentGroupID, currentGroupName, subs, minRemainingUSD, PayAsYouGoFallbackPolicy{})
+	if target == nil {
+		return result, nil, err
+	}
+	return result, target.Subscription, err
+}
+
+func planSwitchOnExhaustedWithPayAsYouGo(
+	keyID int,
+	currentGroupID int,
+	currentGroupName string,
+	subs []CodesomeSubscription,
+	minRemainingUSD float64,
+	payAsYouGo PayAsYouGoFallbackPolicy,
+) (*CodesomeGroupSwitchResult, *groupSwitchTarget, error) {
 	if minRemainingUSD < 0 {
 		return nil, nil, fmt.Errorf("min_remaining 必须大于等于 0")
 	}
@@ -630,10 +677,8 @@ func planSwitchOnExhausted(
 	}
 
 	currentSub, currentRemaining, ok := activeSubscriptionForGroup(subs, currentGroupID)
-	if !ok {
-		return nil, nil, fmt.Errorf("API Key %d 当前 group %d 没有 active subscription", keyID, currentGroupID)
-	}
-	if currentGroupName == "" && currentSub.Group != nil {
+	currentActive := ok
+	if currentActive && currentGroupName == "" && currentSub.Group != nil {
 		currentGroupName = currentSub.Group.Name
 	}
 
@@ -646,9 +691,11 @@ func planSwitchOnExhausted(
 		CurrentRemainingUSD: currentRemaining,
 	}
 
-	shouldSwitch := currentRemaining <= 0
+	// A key can be stranded on a group whose subscription is no longer active.
+	// Treat that as zero remaining so auto-switch can recover it.
+	shouldSwitch := !currentActive || currentRemaining <= 0
 	if minRemainingUSD > 0 {
-		shouldSwitch = currentRemaining < minRemainingUSD
+		shouldSwitch = !currentActive || currentRemaining < minRemainingUSD
 	}
 	if !shouldSwitch {
 		if minRemainingUSD > 0 {
@@ -659,11 +706,14 @@ func planSwitchOnExhausted(
 		return result, nil, nil
 	}
 
-	target, targetRemaining, ok := bestAvailableSubscription(subs, currentGroupID)
-	if !ok {
+	target, targetRemaining, targetOK := bestAvailableSubscription(subs, currentGroupID)
+	if !targetOK {
 		if minRemainingUSD > 0 && currentRemaining > 0 {
 			result.Message = fmt.Sprintf("当前 group 剩余额度 $%.2f，低于阈值 $%.2f，但没有剩余额度更高的可切换 group", currentRemaining, minRemainingUSD)
 			return result, nil, nil
+		}
+		if payAsYouGoResult, payAsYouGoTarget, handled, err := planPayAsYouGoFallback(result, subs, payAsYouGo); handled {
+			return payAsYouGoResult, payAsYouGoTarget, err
 		}
 		return nil, nil, fmt.Errorf("没有可切换的 active subscription group")
 	}
@@ -676,12 +726,59 @@ func planSwitchOnExhausted(
 	result.ToGroupID = target.Group.ID
 	result.ToGroupName = target.Group.Name
 	result.TargetRemainingUSD = targetRemaining
+	if !currentActive {
+		result.Message = fmt.Sprintf("当前 group %d 没有 active subscription，切换到剩余额度最多的 group %d", currentGroupID, target.Group.ID)
+		return result, activeSubscriptionSwitchTarget(target), nil
+	}
 	if minRemainingUSD > 0 {
 		result.Message = fmt.Sprintf("当前 group 剩余额度 $%.2f，低于阈值 $%.2f，切换到剩余额度最多的 group %d", currentRemaining, minRemainingUSD, target.Group.ID)
 	} else {
 		result.Message = fmt.Sprintf("当前 group 已无剩余额度，切换到剩余额度最多的 group %d", target.Group.ID)
 	}
-	return result, target, nil
+	return result, activeSubscriptionSwitchTarget(target), nil
+}
+
+func planPayAsYouGoFallback(
+	result *CodesomeGroupSwitchResult,
+	subs []CodesomeSubscription,
+	policy PayAsYouGoFallbackPolicy,
+) (*CodesomeGroupSwitchResult, *groupSwitchTarget, bool, error) {
+	if policy.GroupID <= 0 {
+		return result, nil, false, nil
+	}
+	if policy.HistoryLoadError != "" {
+		return nil, nil, true, fmt.Errorf("读取按量付费保护历史用量失败: %s", policy.HistoryLoadError)
+	}
+
+	summary := summarizeSubscriptions(subs)
+	requiredLimit := policy.requiredSubscriptionDailyLimitUSD()
+	if summary.LimitUSD < requiredLimit {
+		result.Message = fmt.Sprintf(
+			"active subscription 日额度 $%.2f 低于按量付费保护阈值 $%.2f，不切换到按量付费 group %d",
+			summary.LimitUSD,
+			requiredLimit,
+			policy.GroupID,
+		)
+		return result, nil, true, nil
+	}
+
+	result.ToGroupID = policy.GroupID
+	result.ToGroupName = "按量付费"
+	result.ToPayAsYouGo = true
+	if result.FromGroupID == policy.GroupID {
+		result.Message = "API Key 已在按量付费 group，无需切换"
+		return result, nil, true, nil
+	}
+
+	result.Switched = true
+	result.Message = fmt.Sprintf(
+		"active subscription 已无可用余额，切换到按量付费 group %d",
+		policy.GroupID,
+	)
+	return result, &groupSwitchTarget{
+		GroupID:    policy.GroupID,
+		PayAsYouGo: true,
+	}, true, nil
 }
 
 func clearCodesomeGroupSwitchCaches() {
@@ -929,6 +1026,15 @@ func BestCodesomeGroupID(cfg *config.Config) (int, error) {
 }
 
 func SwitchCodesomeKeyGroupOnExhausted(cfg *config.Config, keyID int, minRemainingUSD float64) (*CodesomeGroupSwitchResult, error) {
+	return SwitchCodesomeKeyGroupOnExhaustedWithPayAsYouGoPolicy(cfg, keyID, minRemainingUSD, PayAsYouGoFallbackPolicy{})
+}
+
+func SwitchCodesomeKeyGroupOnExhaustedWithPayAsYouGoPolicy(
+	cfg *config.Config,
+	keyID int,
+	minRemainingUSD float64,
+	payAsYouGo PayAsYouGoFallbackPolicy,
+) (*CodesomeGroupSwitchResult, error) {
 	client := newCodesomeClient(cfg)
 	key, err := client.fetchApiKeyByID(keyID)
 	if err != nil {
@@ -940,7 +1046,7 @@ func SwitchCodesomeKeyGroupOnExhausted(cfg *config.Config, keyID int, minRemaini
 	if err != nil {
 		return nil, fmt.Errorf("获取订阅信息失败: %w", err)
 	}
-	result, target, err := planSwitchOnExhausted(keyID, currentGroupID, keyGroupName(key), subs, minRemainingUSD)
+	result, target, err := planSwitchOnExhaustedWithPayAsYouGo(keyID, currentGroupID, keyGroupName(key), subs, minRemainingUSD, payAsYouGo)
 	if err != nil {
 		return nil, err
 	}
@@ -948,7 +1054,7 @@ func SwitchCodesomeKeyGroupOnExhausted(cfg *config.Config, keyID int, minRemaini
 		return result, nil
 	}
 
-	if err := client.switchKeyGroup(keyID, target.Group.ID); err != nil {
+	if err := client.switchKeyGroup(keyID, target.GroupID); err != nil {
 		return nil, err
 	}
 	clearCodesomeGroupSwitchCaches()
@@ -975,6 +1081,14 @@ func SwitchAllCodesomeKeysGroupOnExhausted(
 func SwitchAllCodesomeKeysGroupOnExhaustedWithSummary(
 	cfg *config.Config,
 	minRemainingUSD float64,
+) ([]CodesomeGroupSwitchBatchResult, CodesomeSubscriptionUsageSummary, error) {
+	return SwitchAllCodesomeKeysGroupOnExhaustedWithSummaryAndPayAsYouGoPolicy(cfg, minRemainingUSD, PayAsYouGoFallbackPolicy{})
+}
+
+func SwitchAllCodesomeKeysGroupOnExhaustedWithSummaryAndPayAsYouGoPolicy(
+	cfg *config.Config,
+	minRemainingUSD float64,
+	payAsYouGo PayAsYouGoFallbackPolicy,
 ) ([]CodesomeGroupSwitchBatchResult, CodesomeSubscriptionUsageSummary, error) {
 	if minRemainingUSD < 0 {
 		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("min_remaining 必须大于等于 0")
@@ -1003,12 +1117,13 @@ func SwitchAllCodesomeKeysGroupOnExhaustedWithSummary(
 			Name:  key.Name,
 		}
 
-		result, target, err := planSwitchOnExhausted(
+		result, target, err := planSwitchOnExhaustedWithPayAsYouGo(
 			key.ID,
 			keyGroupID(&key),
 			keyGroupName(&key),
 			subs,
 			minRemainingUSD,
+			payAsYouGo,
 		)
 		if err != nil {
 			item.Error = err.Error()
@@ -1016,7 +1131,7 @@ func SwitchAllCodesomeKeysGroupOnExhaustedWithSummary(
 			continue
 		}
 		if target != nil {
-			if err := client.switchKeyGroup(key.ID, target.Group.ID); err != nil {
+			if err := client.switchKeyGroup(key.ID, target.GroupID); err != nil {
 				item.Error = err.Error()
 				results = append(results, item)
 				continue
@@ -1037,6 +1152,15 @@ func SwitchCodesomeKeysGroupOnExhaustedWithSummary(
 	cfg *config.Config,
 	keyConfigs []config.CodesomeApiKeyId,
 	minRemainingUSD float64,
+) ([]CodesomeGroupSwitchBatchResult, CodesomeSubscriptionUsageSummary, error) {
+	return SwitchCodesomeKeysGroupOnExhaustedWithSummaryAndPayAsYouGoPolicy(cfg, keyConfigs, minRemainingUSD, PayAsYouGoFallbackPolicy{})
+}
+
+func SwitchCodesomeKeysGroupOnExhaustedWithSummaryAndPayAsYouGoPolicy(
+	cfg *config.Config,
+	keyConfigs []config.CodesomeApiKeyId,
+	minRemainingUSD float64,
+	payAsYouGo PayAsYouGoFallbackPolicy,
 ) ([]CodesomeGroupSwitchBatchResult, CodesomeSubscriptionUsageSummary, error) {
 	if minRemainingUSD < 0 {
 		return nil, CodesomeSubscriptionUsageSummary{}, fmt.Errorf("min_remaining 必须大于等于 0")
@@ -1070,12 +1194,13 @@ func SwitchCodesomeKeysGroupOnExhaustedWithSummary(
 			continue
 		}
 
-		result, target, err := planSwitchOnExhausted(
+		result, target, err := planSwitchOnExhaustedWithPayAsYouGo(
 			keyConfig.ID,
 			keyGroupID(key),
 			keyGroupName(key),
 			subs,
 			minRemainingUSD,
+			payAsYouGo,
 		)
 		if err != nil {
 			item.Error = err.Error()
@@ -1083,7 +1208,7 @@ func SwitchCodesomeKeysGroupOnExhaustedWithSummary(
 			continue
 		}
 		if target != nil {
-			if err := client.switchKeyGroup(keyConfig.ID, target.Group.ID); err != nil {
+			if err := client.switchKeyGroup(keyConfig.ID, target.GroupID); err != nil {
 				item.Error = err.Error()
 				results = append(results, item)
 				continue

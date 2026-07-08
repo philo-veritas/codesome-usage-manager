@@ -15,6 +15,9 @@ codesome:
     email: "user@example.test"
     password: "secret"
   default_group_id: 51
+  pay_as_you_go_group_id: 3
+  pay_as_you_go_min_subscription_daily_limit_usd: 60
+  pay_as_you_go_history_days: 21
   api_key_ids:
     - id: 6732
       name: "main"
@@ -36,8 +39,38 @@ codesome:
 	if codesome.DefaultGroupID != 51 {
 		t.Fatalf("unexpected default group id: %d", codesome.DefaultGroupID)
 	}
+	if codesome.PayAsYouGoGroupID != 3 {
+		t.Fatalf("unexpected pay as you go group id: %d", codesome.PayAsYouGoGroupID)
+	}
+	if codesome.PayAsYouGoMinSubscriptionDailyLimitUSD != 60 {
+		t.Fatalf("unexpected pay as you go minimum subscription limit: %.2f", codesome.PayAsYouGoMinSubscriptionDailyLimitUSD)
+	}
+	if codesome.PayAsYouGoHistoryDays != 21 {
+		t.Fatalf("unexpected pay as you go history days: %d", codesome.PayAsYouGoHistoryDays)
+	}
 	if len(codesome.ApiKeyIDs) != 1 || codesome.ApiKeyIDs[0].Key != "main" {
 		t.Fatalf("unexpected api_key_ids: %+v", codesome.ApiKeyIDs)
+	}
+}
+
+func TestCodesomePayAsYouGoDefaults(t *testing.T) {
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(`
+codesome:
+  base_url: "https://example.test/"
+`), &cfg); err != nil {
+		t.Fatalf("failed to parse config: %v", err)
+	}
+
+	codesome := cfg.GetCodesomeConfig()
+	if codesome.PayAsYouGoGroupID != DefaultPayAsYouGoGroupID {
+		t.Fatalf("unexpected default pay as you go group id: %d", codesome.PayAsYouGoGroupID)
+	}
+	if codesome.PayAsYouGoMinSubscriptionDailyLimitUSD != DefaultPayAsYouGoMinSubscriptionDailyLimitUSD {
+		t.Fatalf("unexpected default pay as you go minimum subscription limit: %.2f", codesome.PayAsYouGoMinSubscriptionDailyLimitUSD)
+	}
+	if codesome.PayAsYouGoHistoryDays != DefaultPayAsYouGoHistoryDays {
+		t.Fatalf("unexpected default pay as you go history days: %d", codesome.PayAsYouGoHistoryDays)
 	}
 }
 

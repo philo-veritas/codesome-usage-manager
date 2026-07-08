@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/payg"
 	"codesome-usage-manager/internal/provider"
 	"codesome-usage-manager/internal/repository"
 )
@@ -111,13 +112,17 @@ func runSwitchOnExhausted(cmd *cobra.Command, args []string) error {
 	if minRemainingUSD < 0 {
 		return fmt.Errorf("min-remaining 必须大于等于 0")
 	}
+	payAsYouGoPolicy, err := payg.LoadFallbackPolicyWithPath(context.Background(), cfg, dbPath)
+	if err != nil {
+		return err
+	}
 
 	if exhaustedAll {
 		keyConfigs, err := loadSwitchOnExhaustedAllKeyConfigs(context.Background())
 		if err != nil {
 			return err
 		}
-		results, summary, err := provider.SwitchCodesomeKeysGroupOnExhaustedWithSummary(cfg, keyConfigs, minRemainingUSD)
+		results, summary, err := provider.SwitchCodesomeKeysGroupOnExhaustedWithSummaryAndPayAsYouGoPolicy(cfg, keyConfigs, minRemainingUSD, payAsYouGoPolicy)
 		if err != nil {
 			return fmt.Errorf("批量自动切换 group 失败: %w", err)
 		}
@@ -133,7 +138,7 @@ func runSwitchOnExhausted(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	result, err := provider.SwitchCodesomeKeyGroupOnExhausted(cfg, resolvedID, minRemainingUSD)
+	result, err := provider.SwitchCodesomeKeyGroupOnExhaustedWithPayAsYouGoPolicy(cfg, resolvedID, minRemainingUSD, payAsYouGoPolicy)
 	if err != nil {
 		return fmt.Errorf("自动切换 group 失败: %w", err)
 	}
@@ -245,6 +250,16 @@ func printGroupSwitchResultWithLabelWith(keyLabel string, result *provider.Codes
 
 func printGroupSwitchResultWithSubjectWith(subject string, result *provider.CodesomeGroupSwitchResult, printf func(string, ...any)) {
 	if result.Switched {
+		if result.ToPayAsYouGo {
+			printf(
+				"%s 已切换 group: %s -> %s（按量付费），当前剩余额度 $%.2f\n",
+				subject,
+				formatGroupLabel(result.FromGroupID, result.FromGroupName),
+				formatGroupLabel(result.ToGroupID, result.ToGroupName),
+				result.CurrentRemainingUSD,
+			)
+			return
+		}
 		printf(
 			"%s 已切换 group: %s -> %s，当前剩余额度 $%.2f，目标剩余额度 $%.2f\n",
 			subject,
@@ -271,6 +286,7 @@ type resultPrintKey struct {
 	fromGroupName       string
 	toGroupID           int
 	toGroupName         string
+	toPayAsYouGo        bool
 	currentRemainingUSD float64
 	targetRemainingUSD  float64
 	message             string
@@ -287,6 +303,7 @@ func newResultPrintKey(result *provider.CodesomeGroupSwitchResult) resultPrintKe
 		fromGroupName:       result.FromGroupName,
 		toGroupID:           result.ToGroupID,
 		toGroupName:         result.ToGroupName,
+		toPayAsYouGo:        result.ToPayAsYouGo,
 		currentRemainingUSD: result.CurrentRemainingUSD,
 		targetRemainingUSD:  result.TargetRemainingUSD,
 		message:             message,

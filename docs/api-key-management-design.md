@@ -36,12 +36,17 @@ codesome:
     email: "your-email@example.com"
     password: "your-password"
   default_group_id: 51
+  pay_as_you_go_group_id: 3
+  pay_as_you_go_min_subscription_daily_limit_usd: 60
+  pay_as_you_go_history_days: 21
 
 database:
   path: "./codesome-manager.db"
 ```
 
 `default_group_id` 是新管理流程创建 key 时使用的全局默认 Codesome group。`users.codesome_group_id` 只作为个人级覆盖值；大多数用户不需要单独配置。
+
+`pay_as_you_go_group_id` 是 active subscription 全部耗尽后的按量付费兜底 group，默认 `3`。兜底前会先校验 active subscription 日额度是否至少达到 `max(pay_as_you_go_min_subscription_daily_limit_usd, 最近历史日用量 P80)`；默认基础阈值是 `$60/日`，历史窗口是 `21` 天。该策略只用于突发需求，不用于掩盖订阅容量长期不足。
 
 `api_key_ids` 不作为新功能的数据源。它只用于现有命令兼容，例如：
 

@@ -7,12 +7,14 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"codesome-usage-manager/internal/config"
+	"codesome-usage-manager/internal/payg"
 	"codesome-usage-manager/internal/provider"
 )
 
@@ -154,6 +156,20 @@ func autoSwitchPrintf(w io.Writer, loc *time.Location) func(string, ...any) {
 func alignKeysToBestGroup(cfg *config.Config, printf func(string, ...any)) (float64, error) {
 	results, err := provider.SwitchAllCodesomeKeysToBestGroup(cfg)
 	if err != nil {
+		if strings.Contains(err.Error(), "没有可用的 active subscription group") {
+			payAsYouGoPolicy, policyErr := payg.LoadFallbackPolicy(context.Background(), cfg)
+			if policyErr != nil {
+				return 0, policyErr
+			}
+			results, _, fallbackErr := provider.SwitchAllCodesomeKeysGroupOnExhaustedWithSummaryAndPayAsYouGoPolicy(cfg, 0, payAsYouGoPolicy)
+			if fallbackErr != nil {
+				return 0, fallbackErr
+			}
+			if hasErrors := printGroupSwitchBatchResultsWith(results, printf); hasErrors {
+				return remainingFromSwitchResults(results), fmt.Errorf("部分 API Key 切换到按量付费 group 失败")
+			}
+			return remainingFromSwitchResults(results), nil
+		}
 		return 0, err
 	}
 	if hasErrors := printGroupSwitchBatchResultsWith(results, printf); hasErrors {
@@ -163,7 +179,11 @@ func alignKeysToBestGroup(cfg *config.Config, printf func(string, ...any)) (floa
 }
 
 func switchKeysOnExhausted(cfg *config.Config, minRemainingUSD float64, printf func(string, ...any)) (float64, error) {
-	results, err := provider.SwitchAllCodesomeKeysGroupOnExhausted(cfg, minRemainingUSD)
+	payAsYouGoPolicy, err := payg.LoadFallbackPolicy(context.Background(), cfg)
+	if err != nil {
+		return 0, err
+	}
+	results, _, err := provider.SwitchAllCodesomeKeysGroupOnExhaustedWithSummaryAndPayAsYouGoPolicy(cfg, minRemainingUSD, payAsYouGoPolicy)
 	if err != nil {
 		return 0, err
 	}
