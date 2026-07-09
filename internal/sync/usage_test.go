@@ -2,6 +2,8 @@ package syncer
 
 import (
 	"context"
+	"database/sql"
+	"strconv"
 	"testing"
 
 	"codesome-usage-manager/internal/provider"
@@ -50,7 +52,8 @@ func TestSyncUsageFetchesAndStoresDailyStats(t *testing.T) {
 	if service.calls[0].keyID != 6732 || service.calls[0].usageDate != "2026-05-26" || !service.calls[0].forceUpdate {
 		t.Fatalf("unexpected first call: %+v", service.calls[0])
 	}
-	stored, err := repository.NewUsageDailyRepository(database).Get(ctx, key.ID, "2026-05-27")
+	account := ensureTestCodesomeUsageAccount(t, database, key)
+	stored, err := repository.NewUsageDailyRepository(database).Get(ctx, account.ID, "2026-05-27")
 	if err != nil {
 		t.Fatalf("get stored usage: %v", err)
 	}
@@ -77,7 +80,8 @@ func TestSyncUsageReusesExistingDailyStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create api key: %v", err)
 	}
-	if _, err := repository.NewUsageDailyRepository(database).Upsert(ctx, key.ID, "2026-06-11", provider.CodesomeUsageStats{
+	account := ensureTestCodesomeUsageAccount(t, database, key)
+	if _, err := repository.NewUsageDailyRepository(database).Upsert(ctx, account.ID, "2026-06-11", provider.CodesomeUsageStats{
 		TotalRequests:   10,
 		TotalTokens:     100,
 		TotalActualCost: 1.5,
@@ -125,7 +129,8 @@ func TestSyncUsageForceUpdateDateBypassesExistingDailyStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create api key: %v", err)
 	}
-	if _, err := repository.NewUsageDailyRepository(database).Upsert(ctx, key.ID, "2026-06-12", provider.CodesomeUsageStats{
+	account := ensureTestCodesomeUsageAccount(t, database, key)
+	if _, err := repository.NewUsageDailyRepository(database).Upsert(ctx, account.ID, "2026-06-12", provider.CodesomeUsageStats{
 		TotalTokens:     100,
 		TotalActualCost: 1.5,
 	}); err != nil {
@@ -168,4 +173,21 @@ type fakeUsageStatsCall struct {
 func (s *fakeUsageStatsService) GetUsageStats(ctx context.Context, keyID int, usageDate string, forceUpdate bool) (*provider.CodesomeUsageStats, error) {
 	s.calls = append(s.calls, fakeUsageStatsCall{keyID: keyID, usageDate: usageDate, forceUpdate: forceUpdate})
 	return s.stats, nil
+}
+
+func ensureTestCodesomeUsageAccount(t *testing.T, database *sql.DB, key *repository.APIKey) *repository.UsageAccount {
+	t.Helper()
+
+	accountRepo := repository.NewUsageAccountRepository(database)
+	if err := accountRepo.EnsureCodesomeAccounts(context.Background()); err != nil {
+		t.Fatalf("ensure codesome usage accounts: %v", err)
+	}
+	account, err := accountRepo.FindBySource(context.Background(), repository.UsageSourceCodesome, strconv.Itoa(key.CodesomeKeyID))
+	if err != nil {
+		t.Fatalf("find codesome usage account: %v", err)
+	}
+	if account == nil {
+		t.Fatalf("expected usage account for key %d", key.CodesomeKeyID)
+	}
+	return account
 }

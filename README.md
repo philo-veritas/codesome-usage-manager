@@ -190,9 +190,12 @@ codesome sync usage --date 2026-05-26
 codesome sync usage --from 2026-05-01 --to 2026-05-26
 codesome sync usage --yesterday
 codesome sync usage --date 2026-05-28 --include-today
+codesome usage import codex --employee-no E12345 --date 2026-07-08 --offline
 ```
 
-When `feishu.bitable.usage.table_id` is configured, `sync usage` also upserts the synced rows to the Feishu Bitable usage table. The usage table must contain these fields: `ID`, `日期`, `人员`, `总Tokens`, and `实际成本USD`. `ID` uses `YYYY-MM-DD#codesome_key_id`; the local `feishu_usage_records` table caches the matching Bitable `record_id` for faster updates.
+`usage import codex` reads local Codex usage through `npx ccusage@latest codex daily --json` and imports it for one local employee. Use `--from/--to` for a date range, `--codex-home` to point at a specific Codex home, `--offline` to avoid refreshing pricing data, and `--overwrite` to replace an existing imported day.
+
+When `feishu.bitable.usage.table_id` is configured, `sync usage` and `usage import codex` also upsert rows to the Feishu Bitable usage table. The usage table must contain these fields: `ID`, `日期`, `人员`, `总Tokens`, and `实际成本USD`. `ID` uses `YYYY-MM-DD#source#source_account_id`, for example `2026-07-08#codesome#6732` or `2026-07-08#codex#E12345`; the local `feishu_usage_records` table caches the matching Bitable `record_id` for faster updates.
 
 Feishu usage sync only writes rows that have a local `feishu_open_id` and `total_tokens > 0`; rows without a matched Feishu person or without token usage are skipped.
 

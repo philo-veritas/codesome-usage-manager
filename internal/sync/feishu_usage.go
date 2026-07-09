@@ -9,6 +9,7 @@ import (
 
 	"codesome-usage-manager/internal/config"
 	"codesome-usage-manager/internal/provider"
+	"codesome-usage-manager/internal/repository"
 )
 
 const (
@@ -88,12 +89,39 @@ func SyncUsageToFeishu(ctx context.Context, feishu *config.FeishuConfig, client 
 				return results, fmt.Errorf("update feishu usage %s: %w", id, err)
 			}
 		}
+		if legacyID := FeishuUsageLegacyID(row); legacyID != "" {
+			recordID, err := store.GetRecordID(ctx, source.appToken, source.tableID, legacyID)
+			if err != nil {
+				return results, err
+			}
+			if recordID != "" {
+				record, err := client.UpdateBitableRecord(ctx, source.appToken, source.tableID, recordID, fields)
+				if err == nil {
+					if err := store.Upsert(ctx, source.appToken, source.tableID, id, record.RecordID); err != nil {
+						return results, err
+					}
+					results = append(results, FeishuUsageSyncResult{ID: id, Action: "updated", RecordID: record.RecordID, Message: "legacy_id_repaired"})
+					continue
+				}
+				if !isFeishuRecordIDNotFound(err) {
+					return results, fmt.Errorf("update feishu usage %s: %w", id, err)
+				}
+			}
+		}
 
 		existingRecords, err := loadExisting()
 		if err != nil {
 			return results, err
 		}
-		if recordID := existingRecords[id]; recordID != "" {
+		recordID := existingRecords[id]
+		message := "record_id_repaired"
+		if recordID == "" {
+			if legacyID := FeishuUsageLegacyID(row); legacyID != "" {
+				recordID = existingRecords[legacyID]
+				message = "legacy_id_repaired"
+			}
+		}
+		if recordID != "" {
 			record, err := client.UpdateBitableRecord(ctx, source.appToken, source.tableID, recordID, fields)
 			if err != nil {
 				return results, fmt.Errorf("update feishu usage %s: %w", id, err)
@@ -101,7 +129,7 @@ func SyncUsageToFeishu(ctx context.Context, feishu *config.FeishuConfig, client 
 			if err := store.Upsert(ctx, source.appToken, source.tableID, id, record.RecordID); err != nil {
 				return results, err
 			}
-			results = append(results, FeishuUsageSyncResult{ID: id, Action: "updated", RecordID: record.RecordID, Message: "record_id_repaired"})
+			results = append(results, FeishuUsageSyncResult{ID: id, Action: "updated", RecordID: record.RecordID, Message: message})
 			continue
 		}
 		record, err := client.CreateBitableRecord(ctx, source.appToken, source.tableID, fields)
@@ -125,6 +153,13 @@ func HasFeishuUsageConfig(feishu *config.FeishuConfig) bool {
 }
 
 func FeishuUsageID(row UsageSyncResult) string {
+	return fmt.Sprintf("%s#%s#%s", row.UsageDate, row.Source, row.SourceAccountID)
+}
+
+func FeishuUsageLegacyID(row UsageSyncResult) string {
+	if row.Source != repository.UsageSourceCodesome || row.CodesomeKeyID <= 0 {
+		return ""
+	}
 	return fmt.Sprintf("%s#%d", row.UsageDate, row.CodesomeKeyID)
 }
 

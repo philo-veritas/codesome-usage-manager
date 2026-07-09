@@ -11,7 +11,7 @@ import (
 
 type UsageDaily struct {
 	ID                int64
-	APIKeyID          int64
+	UsageAccountID    int64
 	UsageDate         string
 	TotalRequests     int64
 	TotalInputTokens  int64
@@ -40,16 +40,26 @@ type DailyActualCost struct {
 }
 
 type UsageDailyRepository struct {
-	db *sql.DB
+	db usageDailyStore
+}
+
+type usageDailyStore interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
 func NewUsageDailyRepository(db *sql.DB) *UsageDailyRepository {
 	return &UsageDailyRepository{db: db}
 }
 
-func (r *UsageDailyRepository) Upsert(ctx context.Context, apiKeyID int64, usageDate string, stats provider.CodesomeUsageStats) (*UsageDaily, error) {
-	if apiKeyID <= 0 {
-		return nil, fmt.Errorf("api key id must be positive")
+func NewUsageDailyRepositoryTx(tx *sql.Tx) *UsageDailyRepository {
+	return &UsageDailyRepository{db: tx}
+}
+
+func (r *UsageDailyRepository) Upsert(ctx context.Context, usageAccountID int64, usageDate string, stats provider.CodesomeUsageStats) (*UsageDaily, error) {
+	if usageAccountID <= 0 {
+		return nil, fmt.Errorf("usage account id must be positive")
 	}
 	if usageDate == "" {
 		return nil, fmt.Errorf("usage date is required")
@@ -57,9 +67,9 @@ func (r *UsageDailyRepository) Upsert(ctx context.Context, apiKeyID int64, usage
 
 	fetchedAt := nowString()
 	if _, err := r.db.ExecContext(ctx, `
-INSERT INTO usage_daily (
-  api_key_id,
-  usage_date,
+	INSERT INTO usage_daily (
+	  usage_account_id,
+	  usage_date,
   total_requests,
   total_input_tokens,
   total_output_tokens,
@@ -69,11 +79,11 @@ INSERT INTO usage_daily (
   total_actual_cost,
   average_duration_ms,
   fetched_at
-) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-)
-ON CONFLICT(api_key_id, usage_date) DO UPDATE SET
-  total_requests = excluded.total_requests,
+	) VALUES (
+	  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	)
+	ON CONFLICT(usage_account_id, usage_date) DO UPDATE SET
+	  total_requests = excluded.total_requests,
   total_input_tokens = excluded.total_input_tokens,
   total_output_tokens = excluded.total_output_tokens,
   total_cache_tokens = excluded.total_cache_tokens,
@@ -82,14 +92,14 @@ ON CONFLICT(api_key_id, usage_date) DO UPDATE SET
   total_actual_cost = excluded.total_actual_cost,
   average_duration_ms = excluded.average_duration_ms,
   fetched_at = excluded.fetched_at
-`, apiKeyID, usageDate, stats.TotalRequests, stats.TotalInputTokens, stats.TotalOutputTokens, stats.TotalCacheTokens, stats.TotalTokens, stats.TotalCost, stats.TotalActualCost, stats.AverageDurationMS, fetchedAt); err != nil {
+	`, usageAccountID, usageDate, stats.TotalRequests, stats.TotalInputTokens, stats.TotalOutputTokens, stats.TotalCacheTokens, stats.TotalTokens, stats.TotalCost, stats.TotalActualCost, stats.AverageDurationMS, fetchedAt); err != nil {
 		return nil, fmt.Errorf("upsert usage daily: %w", err)
 	}
-	return r.Get(ctx, apiKeyID, usageDate)
+	return r.Get(ctx, usageAccountID, usageDate)
 }
 
-func (r *UsageDailyRepository) Get(ctx context.Context, apiKeyID int64, usageDate string) (*UsageDaily, error) {
-	usage, err := r.Find(ctx, apiKeyID, usageDate)
+func (r *UsageDailyRepository) Get(ctx context.Context, usageAccountID int64, usageDate string) (*UsageDaily, error) {
+	usage, err := r.Find(ctx, usageAccountID, usageDate)
 	if err != nil {
 		return nil, err
 	}
@@ -99,13 +109,13 @@ func (r *UsageDailyRepository) Get(ctx context.Context, apiKeyID int64, usageDat
 	return usage, nil
 }
 
-func (r *UsageDailyRepository) Find(ctx context.Context, apiKeyID int64, usageDate string) (*UsageDaily, error) {
+func (r *UsageDailyRepository) Find(ctx context.Context, usageAccountID int64, usageDate string) (*UsageDaily, error) {
 	var usage UsageDaily
 	if err := r.db.QueryRowContext(ctx, `
-SELECT
-  id,
-  api_key_id,
-  usage_date,
+	SELECT
+	  id,
+	  usage_account_id,
+	  usage_date,
   total_requests,
   total_input_tokens,
   total_output_tokens,
@@ -115,11 +125,11 @@ SELECT
   total_actual_cost,
   average_duration_ms,
   fetched_at
-FROM usage_daily
-WHERE api_key_id = ? AND usage_date = ?
-`, apiKeyID, usageDate).Scan(
+	FROM usage_daily
+	WHERE usage_account_id = ? AND usage_date = ?
+	`, usageAccountID, usageDate).Scan(
 		&usage.ID,
-		&usage.APIKeyID,
+		&usage.UsageAccountID,
 		&usage.UsageDate,
 		&usage.TotalRequests,
 		&usage.TotalInputTokens,
@@ -158,10 +168,10 @@ SELECT
   COALESCE(SUM(usage_daily.total_requests), 0),
   COALESCE(SUM(usage_daily.total_tokens), 0),
   COALESCE(SUM(usage_daily.total_actual_cost), 0)
-FROM usage_daily
-JOIN api_keys ON usage_daily.api_key_id = api_keys.id
-JOIN users ON api_keys.user_id = users.id
-LEFT JOIN teams ON users.team_id = teams.id
+	FROM usage_daily
+	JOIN usage_accounts ON usage_daily.usage_account_id = usage_accounts.id
+	JOIN users ON usage_accounts.user_id = users.id
+	LEFT JOIN teams ON users.team_id = teams.id
 WHERE usage_daily.usage_date >= ?
   AND usage_daily.usage_date < ?`
 	args := []any{month, startDate, endDate}
@@ -216,19 +226,53 @@ func (r *UsageDailyRepository) RecentDailyActualCosts(ctx context.Context, befor
 	}
 	startDate := end.AddDate(0, 0, -days).Format("2006-01-02")
 
+	hasUsageAccounts, err := r.hasUsageAccountsTable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !hasUsageAccounts {
+		return r.recentDailyActualCostsLegacy(ctx, startDate, beforeDate)
+	}
+	return r.recentDailyActualCostsBySource(ctx, startDate, beforeDate, UsageSourceCodesome)
+}
+
+func (r *UsageDailyRepository) recentDailyActualCostsBySource(ctx context.Context, startDate string, beforeDate string, source string) ([]DailyActualCost, error) {
 	rows, err := r.db.QueryContext(ctx, `
-SELECT
-  usage_date,
-  COALESCE(SUM(total_actual_cost), 0)
-FROM usage_daily
-WHERE usage_date >= ?
-  AND usage_date < ?
-GROUP BY usage_date
-ORDER BY usage_date
-`, startDate, beforeDate)
+	SELECT
+	  usage_date,
+	  COALESCE(SUM(total_actual_cost), 0)
+	FROM usage_daily
+	JOIN usage_accounts ON usage_daily.usage_account_id = usage_accounts.id
+	WHERE usage_date >= ?
+	  AND usage_date < ?
+	  AND usage_accounts.source = ?
+	GROUP BY usage_date
+	ORDER BY usage_date
+	`, startDate, beforeDate, source)
 	if err != nil {
 		return nil, fmt.Errorf("query recent daily actual costs: %w", err)
 	}
+	return scanDailyActualCosts(rows)
+}
+
+func (r *UsageDailyRepository) recentDailyActualCostsLegacy(ctx context.Context, startDate string, beforeDate string) ([]DailyActualCost, error) {
+	rows, err := r.db.QueryContext(ctx, `
+	SELECT
+	  usage_date,
+	  COALESCE(SUM(total_actual_cost), 0)
+	FROM usage_daily
+	WHERE usage_date >= ?
+	  AND usage_date < ?
+	GROUP BY usage_date
+	ORDER BY usage_date
+	`, startDate, beforeDate)
+	if err != nil {
+		return nil, fmt.Errorf("query recent daily actual costs: %w", err)
+	}
+	return scanDailyActualCosts(rows)
+}
+
+func scanDailyActualCosts(rows *sql.Rows) ([]DailyActualCost, error) {
 	defer rows.Close()
 
 	var result []DailyActualCost
@@ -243,6 +287,22 @@ ORDER BY usage_date
 		return nil, fmt.Errorf("iterate recent daily actual costs: %w", err)
 	}
 	return result, nil
+}
+
+func (r *UsageDailyRepository) hasUsageAccountsTable(ctx context.Context) (bool, error) {
+	var name string
+	err := r.db.QueryRowContext(ctx, `
+	SELECT name
+	FROM sqlite_master
+	WHERE type = 'table' AND name = 'usage_accounts'
+	`).Scan(&name)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check usage_accounts table: %w", err)
+	}
+	return name == "usage_accounts", nil
 }
 
 func nextMonthStart(month string) (string, error) {

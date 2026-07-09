@@ -14,9 +14,9 @@ type UsageStatsService interface {
 }
 
 type UsageSyncer struct {
-	keys  *repository.APIKeyRepository
-	usage *repository.UsageDailyRepository
-	stats UsageStatsService
+	accounts *repository.UsageAccountRepository
+	usage    *repository.UsageDailyRepository
+	stats    UsageStatsService
 }
 
 type UsageSyncOptions struct {
@@ -27,21 +27,23 @@ type UsageSyncOptions struct {
 }
 
 type UsageSyncResult struct {
-	UsageDate     string
-	LocalAPIKeyID int64
-	CodesomeKeyID int
-	KeyName       string
-	FeishuOpenID  string
-	TotalRequests int64
-	TotalTokens   int64
-	ActualCost    float64
+	UsageDate           string
+	Source              string
+	SourceAccountID     string
+	LocalUsageAccountID int64
+	CodesomeKeyID       int
+	KeyName             string
+	FeishuOpenID        string
+	TotalRequests       int64
+	TotalTokens         int64
+	ActualCost          float64
 }
 
 func NewUsageSyncer(database *sql.DB, stats UsageStatsService) *UsageSyncer {
 	return &UsageSyncer{
-		keys:  repository.NewAPIKeyRepository(database),
-		usage: repository.NewUsageDailyRepository(database),
-		stats: stats,
+		accounts: repository.NewUsageAccountRepository(database),
+		usage:    repository.NewUsageDailyRepository(database),
+		stats:    stats,
 	}
 }
 
@@ -53,7 +55,10 @@ func (s *UsageSyncer) SyncUsage(ctx context.Context, options UsageSyncOptions) (
 		return nil, fmt.Errorf("usage stats service is nil")
 	}
 
-	targets, err := s.keys.ListUsageTargets(ctx)
+	if err := s.accounts.EnsureCodesomeAccounts(ctx); err != nil {
+		return nil, err
+	}
+	targets, err := s.accounts.ListCodesomeUsageTargets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +68,7 @@ func (s *UsageSyncer) SyncUsage(ctx context.Context, options UsageSyncOptions) (
 		for _, date := range options.Dates {
 			forceUpdate := options.ForceUpdate || options.ForceUpdateDates[date]
 			if options.ReuseExisting && !forceUpdate {
-				stored, err := s.usage.Find(ctx, target.ID, date)
+				stored, err := s.usage.Find(ctx, target.UsageAccountID, date)
 				if err != nil {
 					return nil, err
 				}
@@ -79,7 +84,7 @@ func (s *UsageSyncer) SyncUsage(ctx context.Context, options UsageSyncOptions) (
 			if stats == nil {
 				return nil, fmt.Errorf("sync usage key %d date %s returned nil stats", target.CodesomeKeyID, date)
 			}
-			stored, err := s.usage.Upsert(ctx, target.ID, date, *stats)
+			stored, err := s.usage.Upsert(ctx, target.UsageAccountID, date, *stats)
 			if err != nil {
 				return nil, err
 			}
@@ -89,15 +94,17 @@ func (s *UsageSyncer) SyncUsage(ctx context.Context, options UsageSyncOptions) (
 	return results, nil
 }
 
-func usageSyncResultFromStored(target repository.APIKeyUsageTarget, stored *repository.UsageDaily) UsageSyncResult {
+func usageSyncResultFromStored(target repository.CodesomeUsageAccountTarget, stored *repository.UsageDaily) UsageSyncResult {
 	return UsageSyncResult{
-		UsageDate:     stored.UsageDate,
-		LocalAPIKeyID: target.ID,
-		CodesomeKeyID: target.CodesomeKeyID,
-		KeyName:       target.Name,
-		FeishuOpenID:  target.FeishuOpenID,
-		TotalRequests: stored.TotalRequests,
-		TotalTokens:   stored.TotalTokens,
-		ActualCost:    stored.TotalActualCost,
+		UsageDate:           stored.UsageDate,
+		Source:              target.Source,
+		SourceAccountID:     target.SourceAccountID,
+		LocalUsageAccountID: target.UsageAccountID,
+		CodesomeKeyID:       target.CodesomeKeyID,
+		KeyName:             target.DisplayName,
+		FeishuOpenID:        target.FeishuOpenID,
+		TotalRequests:       stored.TotalRequests,
+		TotalTokens:         stored.TotalTokens,
+		ActualCost:          stored.TotalActualCost,
 	}
 }

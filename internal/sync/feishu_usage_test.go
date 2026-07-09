@@ -8,21 +8,24 @@ import (
 
 	"codesome-usage-manager/internal/config"
 	"codesome-usage-manager/internal/provider"
+	"codesome-usage-manager/internal/repository"
 )
 
 func TestFeishuUsageFieldsUsesConfiguredFieldNames(t *testing.T) {
 	fields, err := FeishuUsageFields(UsageSyncResult{
-		UsageDate:     "2026-06-11",
-		CodesomeKeyID: 6732,
-		FeishuOpenID:  "ou_alice",
-		TotalTokens:   20099584,
-		ActualCost:    30.6706521,
+		UsageDate:       "2026-06-11",
+		Source:          repository.UsageSourceCodesome,
+		SourceAccountID: "6732",
+		CodesomeKeyID:   6732,
+		FeishuOpenID:    "ou_alice",
+		TotalTokens:     20099584,
+		ActualCost:      30.6706521,
 	})
 	if err != nil {
 		t.Fatalf("build fields: %v", err)
 	}
 
-	if fields["ID"] != "2026-06-11#6732" {
+	if fields["ID"] != "2026-06-11#codesome#6732" {
 		t.Fatalf("unexpected ID: %+v", fields["ID"])
 	}
 	if fields["日期"] != int64(1781107200000) {
@@ -58,13 +61,13 @@ func TestSyncUsageToFeishuUsesStoredRecordID(t *testing.T) {
 	client := &fakeFeishuUsageClient{}
 	store := fakeFeishuUsageRecordStore{
 		records: map[string]string{
-			"app_token|tbl_usage|2026-06-10#6732": "rec_stored",
+			"app_token|tbl_usage|2026-06-10#codesome#6732": "rec_stored",
 		},
 	}
 	feishu := testFeishuUsageConfig()
 
 	results, err := SyncUsageToFeishu(ctx, feishu, client, store, []UsageSyncResult{
-		{UsageDate: "2026-06-10", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 100, ActualCost: 1.25},
+		{UsageDate: "2026-06-10", Source: repository.UsageSourceCodesome, SourceAccountID: "6732", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 100, ActualCost: 1.25},
 	})
 	if err != nil {
 		t.Fatalf("sync feishu usage: %v", err)
@@ -87,7 +90,7 @@ func TestSyncUsageToFeishuCreatesAndStoresRecordID(t *testing.T) {
 	feishu := testFeishuUsageConfig()
 
 	results, err := SyncUsageToFeishu(ctx, feishu, client, store, []UsageSyncResult{
-		{UsageDate: "2026-06-11", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 200, ActualCost: 2.5},
+		{UsageDate: "2026-06-11", Source: repository.UsageSourceCodesome, SourceAccountID: "6732", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 200, ActualCost: 2.5},
 	})
 	if err != nil {
 		t.Fatalf("sync feishu usage: %v", err)
@@ -98,10 +101,10 @@ func TestSyncUsageToFeishuCreatesAndStoresRecordID(t *testing.T) {
 	if client.searchViewID != "vew_usage" {
 		t.Fatalf("unexpected view id: %s", client.searchViewID)
 	}
-	if len(client.created) != 1 || client.created[0]["ID"] != "2026-06-11#6732" {
+	if len(client.created) != 1 || client.created[0]["ID"] != "2026-06-11#codesome#6732" {
 		t.Fatalf("unexpected creates: %+v", client.created)
 	}
-	if got := store.records["app_token|tbl_usage|2026-06-11#6732"]; got != "rec_created" {
+	if got := store.records["app_token|tbl_usage|2026-06-11#codesome#6732"]; got != "rec_created" {
 		t.Fatalf("expected stored record id, got %q", got)
 	}
 }
@@ -129,18 +132,18 @@ func TestSyncUsageToFeishuRepairsStaleRecordID(t *testing.T) {
 	feishu := testFeishuUsageConfig()
 
 	results, err := SyncUsageToFeishu(ctx, feishu, client, store, []UsageSyncResult{
-		{UsageDate: "2026-06-10", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 100, ActualCost: 1.25},
+		{UsageDate: "2026-06-10", Source: repository.UsageSourceCodesome, SourceAccountID: "6732", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 100, ActualCost: 1.25},
 	})
 	if err != nil {
 		t.Fatalf("sync feishu usage: %v", err)
 	}
-	if len(results) != 1 || results[0].Action != "updated" || results[0].Message != "record_id_repaired" {
+	if len(results) != 1 || results[0].Action != "updated" || results[0].Message != "legacy_id_repaired" {
 		t.Fatalf("unexpected results: %+v", results)
 	}
 	if len(client.updated) != 2 || client.updated[0].recordID != "rec_stale" || client.updated[1].recordID != "rec_repaired" {
 		t.Fatalf("unexpected updates: %+v", client.updated)
 	}
-	if got := store.records["app_token|tbl_usage|2026-06-10#6732"]; got != "rec_repaired" {
+	if got := store.records["app_token|tbl_usage|2026-06-10#codesome#6732"]; got != "rec_repaired" {
 		t.Fatalf("expected repaired record id, got %q", got)
 	}
 }
@@ -161,7 +164,7 @@ func TestSyncUsageToFeishuFindsExistingRichTextObjectID(t *testing.T) {
 	feishu := testFeishuUsageConfig()
 
 	results, err := SyncUsageToFeishu(ctx, feishu, client, store, []UsageSyncResult{
-		{UsageDate: "2026-06-10", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 100, ActualCost: 1.25},
+		{UsageDate: "2026-06-10", Source: repository.UsageSourceCodesome, SourceAccountID: "6732", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 100, ActualCost: 1.25},
 	})
 	if err != nil {
 		t.Fatalf("sync feishu usage: %v", err)
@@ -175,7 +178,7 @@ func TestSyncUsageToFeishuFindsExistingRichTextObjectID(t *testing.T) {
 	if len(client.updated) != 1 || client.updated[0].recordID != "rec_existing" {
 		t.Fatalf("unexpected updates: %+v", client.updated)
 	}
-	if got := store.records["app_token|tbl_usage|2026-06-10#6732"]; got != "rec_existing" {
+	if got := store.records["app_token|tbl_usage|2026-06-10#codesome#6732"]; got != "rec_existing" {
 		t.Fatalf("expected stored record id, got %q", got)
 	}
 }
@@ -187,8 +190,8 @@ func TestSyncUsageToFeishuSkipsRowsWithoutPersonOrTokens(t *testing.T) {
 	feishu := testFeishuUsageConfig()
 
 	results, err := SyncUsageToFeishu(ctx, feishu, client, store, []UsageSyncResult{
-		{UsageDate: "2026-06-10", CodesomeKeyID: 6732, TotalTokens: 100, ActualCost: 1.25},
-		{UsageDate: "2026-06-11", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 0, ActualCost: 0},
+		{UsageDate: "2026-06-10", Source: repository.UsageSourceCodesome, SourceAccountID: "6732", CodesomeKeyID: 6732, TotalTokens: 100, ActualCost: 1.25},
+		{UsageDate: "2026-06-11", Source: repository.UsageSourceCodesome, SourceAccountID: "6732", CodesomeKeyID: 6732, FeishuOpenID: "ou_alice", TotalTokens: 0, ActualCost: 0},
 	})
 	if err != nil {
 		t.Fatalf("sync feishu usage: %v", err)

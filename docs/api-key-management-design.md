@@ -137,7 +137,7 @@ CREATE INDEX idx_api_keys_status ON api_keys(status);
 - 远端 key 的生命周期和人员生命周期不同。
 - usage 应该关联 key，而不是只关联 user。
 
-团队用量通过 `usage_daily -> api_keys -> users -> teams` 聚合。团队不直接绑定 key；历史团队共享 key 可迁移为一个 legacy/virtual user，并挂到对应 team 下。
+团队用量通过 `usage_daily -> usage_accounts -> users -> teams` 聚合。团队不直接绑定 key；历史团队共享 key 可迁移为一个 legacy/virtual user，并挂到对应 team 下。
 
 `raw_key` 策略：
 
@@ -146,14 +146,55 @@ CREATE INDEX idx_api_keys_status ON api_keys(status);
 - 分发动作做成独立命令，例如导出 CSV 或按 user 输出。
 - 后续如有更高安全要求，再考虑加密保存或定期清理。
 
+### usage_accounts
+
+`usage_accounts` 表表示“可以产生用量的账号”。它把统计归属从 Codesome API Key 中抽出来，使同一个 user 可以同时拥有 Codesome key 和官方 Codex 订阅等多种用量来源。
+
+```sql
+CREATE TABLE usage_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  source TEXT NOT NULL CHECK (source IN ('codesome', 'codex')),
+  source_account_id TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+  api_key_id INTEGER REFERENCES api_keys(id),
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_synced_at TEXT,
+  UNIQUE(source, source_account_id)
+);
+
+CREATE INDEX idx_usage_accounts_user_id ON usage_accounts(user_id);
+CREATE INDEX idx_usage_accounts_status ON usage_accounts(status);
+CREATE UNIQUE INDEX idx_usage_accounts_api_key_id
+  ON usage_accounts(api_key_id)
+  WHERE api_key_id IS NOT NULL;
+```
+
+字段规则：
+
+- `source='codesome'` 时，`source_account_id` 使用远端 `codesome_key_id` 的字符串形式，`api_key_id` 指向本地 `api_keys.id`。
+- `source='codex'` 时，`source_account_id` 默认使用 `employee_no`，表示该员工的官方 Codex 本地日志来源；如后续一个员工需要多个 Codex 来源，再扩展为显式 `--account`。
+- `display_name` 用于报表和 Feishu ID 的可读部分。Codesome 默认使用 key name，Codex 默认使用 `Codex 官方订阅`。
+- `metadata_json` 只保存非敏感采集元信息，例如 `CODEX_HOME`、`speed`、`ccusage_version`。不要保存 token、订阅凭据或本地日志内容。
+- `status` 控制是否参与默认同步和报表。历史数据不随账号停用删除。
+
+为什么不直接复用 `api_keys`：
+
+- Codex 官方订阅没有 Codesome 远端 key，也不应该伪造 `codesome_key_id`。
+- `usage_daily` 需要保留来源，避免 Codesome 同步和 Codex 导入互相覆盖。
+- Feishu 幂等 ID 需要包含来源账号，而不是只包含 `codesome_key_id`。
+
 ### usage_daily
 
-`usage_daily` 表按 key 和日期保存历史用量。
+`usage_daily` 表按用量账号和日期保存历史用量。
 
 ```sql
 CREATE TABLE usage_daily (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  api_key_id INTEGER NOT NULL REFERENCES api_keys(id),
+  usage_account_id INTEGER NOT NULL REFERENCES usage_accounts(id),
   usage_date TEXT NOT NULL,
   total_requests INTEGER NOT NULL DEFAULT 0,
   total_input_tokens INTEGER NOT NULL DEFAULT 0,
@@ -164,11 +205,11 @@ CREATE TABLE usage_daily (
   total_actual_cost REAL NOT NULL DEFAULT 0,
   average_duration_ms REAL NOT NULL DEFAULT 0,
   fetched_at TEXT NOT NULL,
-  UNIQUE(api_key_id, usage_date)
+  UNIQUE(usage_account_id, usage_date)
 );
 
 CREATE INDEX idx_usage_daily_date ON usage_daily(usage_date);
-CREATE INDEX idx_usage_daily_api_key_date ON usage_daily(api_key_id, usage_date);
+CREATE INDEX idx_usage_daily_account_date ON usage_daily(usage_account_id, usage_date);
 ```
 
 采集规则：
@@ -178,8 +219,15 @@ CREATE INDEX idx_usage_daily_api_key_date ON usage_daily(api_key_id, usage_date)
 - `start_date` 和 `end_date` 在 Codesome API 中左右包含。
 - 默认只采集今天之前的日期，避免当天数据未稳定。
 - 重复采集同一天时使用 upsert。
+- 不同 `usage_account_id` 的同一天数据互不覆盖。
 - 预计管理 30-50 个 key，按天记录的数据量很小，默认长期保留，不做归档或压缩。
 - 如果未来出现合规或性能需求，再增加按年份导出和清理能力。
+
+成本口径：
+
+- Codesome 来源的 `total_actual_cost` 继续使用 Codesome API 返回的实际成本。
+- Codex 来源的 `total_cost` 和 `total_actual_cost` 暂时都写入 `ccusage` 估算成本，报表中应标记为估算值；官方订阅账单并不会按这条估算成本扣费。
+- 如果后续需要区分真实扣费和估算成本，再新增 `cost_kind` 或独立成本字段，避免在本阶段引入过早复杂度。
 
 ### sync_runs
 
@@ -314,11 +362,61 @@ codesome sync usage --yesterday
 
 同步行为：
 
-1. 读取本地 `api_keys`。
-2. 默认只处理非 deleted user 关联的 key。
-3. 对每个 key 调用 Codesome `/api/v1/usage/stats`。
-4. 按 `(api_key_id, usage_date)` upsert 到 `usage_daily`。
+1. 读取本地 `usage_accounts` 中 `source='codesome'` 的账号。
+2. 默认只处理非 deleted user 关联的 active account。
+3. 对每个账号关联的 Codesome key 调用 Codesome `/api/v1/usage/stats`。
+4. 按 `(usage_account_id, usage_date)` upsert 到 `usage_daily`。
 5. 默认不采集当天，除非显式传 `--include-today`。
+
+### 导入 Codex 官方订阅用量
+
+Codex 官方订阅不经过 Codesome API。它作为外部来源导入本地 `usage_daily`，命令单独放在 `usage import` 下，避免和 Codesome 远端同步混用。
+
+```bash
+codesome usage import codex --employee-no E12345 --date 2026-07-08
+codesome usage import codex --employee-no E12345 --from 2026-07-01 --to 2026-07-08
+codesome usage import codex --employee-no E12345 --from 2026-07-01 --to 2026-07-08 --codex-home ~/.codex --offline
+codesome usage import codex --employee-no E12345 --from 2026-07-01 --to 2026-07-08 --overwrite
+```
+
+导入行为：
+
+1. 用 `--employee-no` 定位本地 user；user 必须存在且不能是 deleted。
+2. 找到或创建该 user 的 `usage_accounts` 记录：`source='codex'`、`source_account_id=employee_no`。
+3. 执行 `npx ccusage@latest codex daily --json --since YYYYMMDD --until YYYYMMDD --timezone Asia/Shanghai`。
+4. 如果传 `--offline`，追加 `--offline`，只使用本地日志和已缓存价格。
+5. 如果传 `--codex-home`，通过 `CODEX_HOME=<path>` 限定读取目录；不传时使用 ccusage 默认的 Codex home。
+6. 解析 daily JSON，按 `(usage_account_id, usage_date)` upsert 到 `usage_daily`。
+7. 默认只写入缺失日期；已存在日期报 `skipped_existing`。只有显式 `--overwrite` 才覆盖既有行。
+
+字段映射：
+
+| ccusage JSON | usage_daily | 说明 |
+| --- | --- | --- |
+| `date` | `usage_date` | `YYYY-MM-DD` |
+| `inputTokens` | `total_input_tokens` | 非缓存输入 |
+| `outputTokens` | `total_output_tokens` | 包含 reasoning output 的输出口径 |
+| `cacheReadTokens + cacheCreationTokens` | `total_cache_tokens` | 当前表只有一个 cache 字段，先合并保存 |
+| `totalTokens` | `total_tokens` | 使用 ccusage 日聚合总数 |
+| `costUSD` 或 `totalCost` | `total_cost` / `total_actual_cost` | 估算成本；不是官方订阅实际扣费 |
+| 无等价字段 | `total_requests` | 置 0 |
+| 无等价字段 | `average_duration_ms` | 置 0 |
+
+安全和可重复性：
+
+- 导入命令只读本地 Codex 日志，不上传日志内容。
+- 命令输出必须包含 `source`、`employee_no`、`usage_date`、`tokens`、`cost`、`action`，便于审计。
+- `npx ccusage@latest` 是外部工具，失败时不写入部分日期；实现时先收集并校验完整结果，再开启 DB 事务写入。
+- 如需可复现成本，优先使用 `--offline`；不用 `--offline` 时，ccusage 可能刷新价格数据，历史估算成本可能变化。
+- 不从 `sync usage` 隐式触发 Codex 导入，避免普通 Codesome 同步意外读取个人本地日志。
+
+Feishu 用量同步：
+
+- `ID` 从 `YYYY-MM-DD#codesome_key_id` 调整为 `YYYY-MM-DD#source#source_account_id`。
+- Codesome 示例：`2026-07-08#codesome#9362`。
+- Codex 示例：`2026-07-08#codex#E12345`。
+- 飞书字段可以继续使用 `日期`、`人员`、`总Tokens`、`实际成本USD`；如需要在表内区分来源，新增 `来源` 字段，值为 `codesome` 或 `codex`。
+- 为了兼容已有飞书记录，迁移后第一次同步允许通过旧 ID 查询 Codesome 记录并更新为新 ID；迁移完成后只写新 ID。
 
 ### 查询
 
@@ -336,8 +434,9 @@ codesome report monthly --month 2026-05 --output report-2026-05.csv
 
 - `--month` 使用 `YYYY-MM`。
 - 月报按自然月和 `Asia/Shanghai` 日期统计。
-- 默认输出所有 team 和 user 的汇总。
+- 默认输出所有 team 和 user 的汇总，合并同一 user 下所有已入库 usage account 的历史用量；account `status` 只控制后续采集，不删除历史统计。
 - 支持按 team 过滤。
+- 如需要排查来源差异，后续增加 `--source codesome|codex|all`；默认 `all`。
 - CSV 字段建议包含 `month,team,user,employee_no,total_requests,total_tokens,total_actual_cost`。
 
 ## HTTP API 设计
@@ -435,6 +534,51 @@ codesome db import-config-keys
 - 文档标记 `api_key_ids` 为 legacy。
 - 新功能默认不读取 `api_key_ids`。
 
+### 阶段 6：用量账号抽象
+
+- 新增 `usage_accounts` 表。
+- 为现有 `api_keys` 回填 `source='codesome'` 的 usage account。
+- 重建 `usage_daily`，把历史 `(api_key_id, usage_date)` 数据迁移为 `(usage_account_id, usage_date)`。
+- 调整月报、Feishu 同步、`sync usage` 查询链路，从 `usage_accounts` 聚合到 user/team。
+- 保留 `api_keys` 作为 Codesome key 生命周期管理表，不再让它承担所有用量来源的身份模型。
+
+迁移校验：
+
+1. 迁移前后 `usage_daily` 行数一致。
+2. 迁移前后按 user/month 聚合的 `total_tokens` 和 `total_actual_cost` 一致。
+3. 每个 active `api_keys` 都有且只有一个 `source='codesome'` 的 usage account。
+4. Feishu 已同步的 Codesome 记录可以通过旧 ID 修复到新 ID，不重复创建同日同 key 记录。
+
+### 阶段 7：Codex 外部源导入
+
+- 新增 `usage import codex` 命令。
+- 新增 ccusage JSON 解析器和字段映射测试。
+- 支持 `--employee-no`、`--date`、`--from/--to`、`--codex-home`、`--offline`、`--overwrite`。
+- 默认只导入指定员工，不做全员扫描。
+- 导入完成后复用现有月报和 Feishu 同步输出，不新增一套报表。
+
+实现顺序：
+
+1. 先完成 schema 迁移和 Codesome 现有路径改造，确保没有行为回退。
+2. 再接入 Codex 导入命令，避免同时改身份模型和外部命令执行造成问题定位困难。
+3. 最后补 README 操作用法和示例输出。
+
+验收命令：
+
+```bash
+go test ./internal/db ./internal/repository ./internal/sync ./cmd
+make test
+make check
+```
+
+针对 Codex 导入再补充：
+
+```bash
+codesome usage import codex --employee-no E12345 --date 2026-07-08 --offline --dry-run
+codesome report monthly --month 2026-07
+```
+
 ## 待确认问题
 
-暂无。
+- `ccusage` 使用 `npx ccusage@latest` 还是锁定版本。建议实现时先支持配置或环境变量覆盖，默认文档写 `@latest`，生产定时任务再固定版本。
+- `total_actual_cost` 是否长期允许保存 Codex 估算成本。当前方案允许，但报表需要能解释这是估算值。

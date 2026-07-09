@@ -118,7 +118,108 @@ CREATE TABLE feishu_usage_records (
 );
 
 CREATE INDEX idx_feishu_usage_records_record_id ON feishu_usage_records(record_id);
-`,
+	`,
+	},
+	{
+		Version: 5,
+		Name:    "add_usage_accounts",
+		SQL: `
+	CREATE TABLE usage_accounts (
+	  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	  user_id INTEGER NOT NULL REFERENCES users(id),
+	  source TEXT NOT NULL CHECK (source IN ('codesome', 'codex')),
+	  source_account_id TEXT NOT NULL,
+	  display_name TEXT NOT NULL,
+	  status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+	  api_key_id INTEGER REFERENCES api_keys(id),
+	  metadata_json TEXT,
+	  created_at TEXT NOT NULL,
+	  updated_at TEXT NOT NULL,
+	  last_synced_at TEXT,
+	  UNIQUE(source, source_account_id)
+	);
+
+	CREATE INDEX idx_usage_accounts_user_id ON usage_accounts(user_id);
+	CREATE INDEX idx_usage_accounts_status ON usage_accounts(status);
+	CREATE UNIQUE INDEX idx_usage_accounts_api_key_id
+	  ON usage_accounts(api_key_id)
+	  WHERE api_key_id IS NOT NULL;
+
+	INSERT INTO usage_accounts (
+	  user_id,
+	  source,
+	  source_account_id,
+	  display_name,
+	  status,
+	  api_key_id,
+	  created_at,
+	  updated_at,
+	  last_synced_at
+	)
+	SELECT
+	  user_id,
+	  'codesome',
+	  CAST(codesome_key_id AS TEXT),
+	  name,
+	  status,
+	  id,
+	  created_at,
+	  updated_at,
+	  last_synced_at
+	FROM api_keys;
+
+	CREATE TABLE usage_daily_new (
+	  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	  usage_account_id INTEGER NOT NULL REFERENCES usage_accounts(id),
+	  usage_date TEXT NOT NULL,
+	  total_requests INTEGER NOT NULL DEFAULT 0,
+	  total_input_tokens INTEGER NOT NULL DEFAULT 0,
+	  total_output_tokens INTEGER NOT NULL DEFAULT 0,
+	  total_cache_tokens INTEGER NOT NULL DEFAULT 0,
+	  total_tokens INTEGER NOT NULL DEFAULT 0,
+	  total_cost REAL NOT NULL DEFAULT 0,
+	  total_actual_cost REAL NOT NULL DEFAULT 0,
+	  average_duration_ms REAL NOT NULL DEFAULT 0,
+	  fetched_at TEXT NOT NULL,
+	  UNIQUE(usage_account_id, usage_date)
+	);
+
+	INSERT INTO usage_daily_new (
+	  id,
+	  usage_account_id,
+	  usage_date,
+	  total_requests,
+	  total_input_tokens,
+	  total_output_tokens,
+	  total_cache_tokens,
+	  total_tokens,
+	  total_cost,
+	  total_actual_cost,
+	  average_duration_ms,
+	  fetched_at
+	)
+	SELECT
+	  usage_daily.id,
+	  usage_accounts.id,
+	  usage_daily.usage_date,
+	  usage_daily.total_requests,
+	  usage_daily.total_input_tokens,
+	  usage_daily.total_output_tokens,
+	  usage_daily.total_cache_tokens,
+	  usage_daily.total_tokens,
+	  usage_daily.total_cost,
+	  usage_daily.total_actual_cost,
+	  usage_daily.average_duration_ms,
+	  usage_daily.fetched_at
+	FROM usage_daily
+	JOIN usage_accounts ON usage_accounts.api_key_id = usage_daily.api_key_id;
+
+	DROP TABLE usage_daily;
+	ALTER TABLE usage_daily_new RENAME TO usage_daily;
+
+	CREATE INDEX idx_usage_daily_date ON usage_daily(usage_date);
+	CREATE INDEX idx_usage_daily_account_date ON usage_daily(usage_account_id, usage_date);
+	`,
 	},
 }
 
