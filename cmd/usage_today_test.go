@@ -61,7 +61,7 @@ func TestSortUsageTodayResultsByCostDescending(t *testing.T) {
 
 func TestPrintUsageTodayResults(t *testing.T) {
 	var buf bytes.Buffer
-	printUsageTodayResults(&buf, []usageTodayResult{
+	printUsageTodayResults(&buf, 10, []usageTodayResult{
 		{
 			target: repository.APIKeyUsageTarget{
 				CodesomeKeyID: 6732,
@@ -81,14 +81,49 @@ func TestPrintUsageTodayResults(t *testing.T) {
 	})
 
 	got := buf.String()
-	if !strings.Contains(got, "KEY_ID") || !strings.Contains(got, "USAGE_STATUS") || !strings.Contains(got, "TODAY_ACTUAL_COST") {
+	if !strings.Contains(got, "KEY_ID") || !strings.Contains(got, "USAGE_STATUS") || !strings.Contains(got, "TODAY_ACTUAL_COST_ACC") {
 		t.Fatalf("missing header: %s", got)
 	}
-	if !strings.Contains(got, "6732") || !strings.Contains(got, "Alice") || !strings.Contains(got, "ok") || !strings.Contains(got, "1.250000") {
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) != 3 || strings.Fields(lines[0])[0] != "NO" || strings.Fields(lines[1])[0] != "1" || strings.Fields(lines[2])[0] != "2" {
+		t.Fatalf("unexpected row numbers: %s", got)
+	}
+	if !strings.Contains(got, "6732") || !strings.Contains(got, "Alice") || !strings.Contains(got, "ok") || !strings.Contains(got, "1.250000 (12.50%)") {
 		t.Fatalf("missing ok row: %s", got)
 	}
-	if !strings.Contains(got, "9362") || !strings.Contains(got, "remote_missing") {
+	if !strings.Contains(got, "9362") || !strings.Contains(got, "remote_missing") || strings.Count(got, "1.250000 (12.50%)") != 2 {
 		t.Fatalf("missing remote missing row: %s", got)
+	}
+}
+
+func TestPrintUsageTodayResultsAccumulatesInDisplayOrder(t *testing.T) {
+	var buf bytes.Buffer
+	printUsageTodayResults(&buf, 12, []usageTodayResult{
+		{usage: provider.CodesomeKeyUsage{TodayCost: 3}},
+		{usage: provider.CodesomeKeyUsage{TodayCost: 2}},
+		{usage: provider.CodesomeKeyUsage{TodayCost: 1}},
+	})
+
+	got := buf.String()
+	for _, want := range []string{
+		"3.000000 (25.00%)",
+		"5.000000 (41.67%)",
+		"6.000000 (50.00%)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing cumulative cost %q: %s", want, got)
+		}
+	}
+}
+
+func TestPrintUsageTodayResultsHandlesZeroTotalLimit(t *testing.T) {
+	var buf bytes.Buffer
+	printUsageTodayResults(&buf, 0, []usageTodayResult{
+		{usage: provider.CodesomeKeyUsage{TodayCost: 3}},
+	})
+
+	if got := buf.String(); !strings.Contains(got, "3.000000 (0.00%)") {
+		t.Fatalf("unexpected cumulative cost percentage: %s", got)
 	}
 }
 

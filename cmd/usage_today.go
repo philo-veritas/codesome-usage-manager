@@ -113,23 +113,32 @@ func printUsageTodayReport(writer io.Writer, summary provider.CodesomeSubscripti
 	printSubscriptionUsageSummaryWith(summary, func(format string, args ...any) {
 		fmt.Fprintf(writer, format, args...)
 	})
-	printUsageTodayResults(writer, results)
+	printUsageTodayResults(writer, summary.LimitUSD, results)
 }
 
-func printUsageTodayResults(writer io.Writer, results []usageTodayResult) {
+func printUsageTodayResults(writer io.Writer, totalLimitUSD float64, results []usageTodayResult) {
 	w := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "KEY_ID\tKEY_NAME\tUSER_STATUS\tUSAGE_STATUS\tTODAY_ACTUAL_COST\tTOTAL_ACTUAL_COST")
-	for _, result := range results {
+	fmt.Fprintln(w, "NO\tKEY_ID\tKEY_NAME\tUSER_STATUS\tUSAGE_STATUS\tTODAY_ACTUAL_COST\tTODAY_ACTUAL_COST_ACC\tTOTAL_ACTUAL_COST")
+	var accumulatedTodayCost float64
+	for index, result := range results {
 		usageStatus := "ok"
 		if !result.usageFound {
 			usageStatus = "remote_missing"
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%.6f\t%.6f\n",
+		accumulatedTodayCost += result.usage.TodayCost
+		accumulatedPercentage := 0.0
+		if totalLimitUSD > 0 {
+			accumulatedPercentage = accumulatedTodayCost / totalLimitUSD * 100
+		}
+		fmt.Fprintf(w, "%d\t%d\t%s\t%s\t%s\t%.6f\t%.6f (%.2f%%)\t%.6f\n",
+			index+1,
 			result.target.CodesomeKeyID,
 			result.target.Name,
 			result.target.UserStatus,
 			usageStatus,
 			result.usage.TodayCost,
+			accumulatedTodayCost,
+			accumulatedPercentage,
 			result.usage.TotalCost,
 		)
 	}
